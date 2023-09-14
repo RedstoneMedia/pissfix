@@ -7,6 +7,7 @@ pub enum TokenEnum {
     BooleanLiteral(bool),
     StringLiteral(String),
     Identifier(String),
+    Comment(String),
 
     IfKeyword,
     WhileKeyword,

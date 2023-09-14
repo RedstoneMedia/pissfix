@@ -228,8 +228,14 @@ impl Parser {
             Ok(Node::ReturnExpression(ReturnExpression { keyword: token, expression: Box::new(return_value_expression) } ))
         } else if let TokenEnum::BreakKeyword = token.kind {
             Ok(Node::BreakExpression(BreakExpression { keyword: token }))
+        } else if let TokenEnum::Comment(_) = token.kind {
+            Ok(Node::CommentExpression(CommentExpression {
+                comment: token,
+                on: None
+            }))
         } else {
-            Err(Error::from_span(token.span,format!("Unexpected sub expression token : {:?}", token), ErrorKind::ParsingError)) }
+            Err(Error::from_span(token.span,format!("Unexpected sub expression token : {:?}", token), ErrorKind::ParsingError))
+        }
     }
 
     fn is_stop_token(&self, token_kind : TokenEnum, stop_token_check : Option<fn(TokenEnum) -> bool>) -> bool {
@@ -254,6 +260,14 @@ impl Parser {
         if self.is_stop_token(operator.kind.clone(), stop_token_check.clone()) {
             self.current_token += 1;
             return Ok(sub_expression);
+        }
+
+        if let TokenEnum::Comment(_) = operator.kind {
+            self.current_token += 1;
+            return Ok(Node::CommentExpression(CommentExpression {
+                comment: operator,
+                on: Some(Box::new(sub_expression)),
+            }));
         }
 
         // Handle assignment expressions

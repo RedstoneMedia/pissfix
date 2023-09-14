@@ -96,26 +96,41 @@ impl Lexer {
                 if char == '"' { break };
                 string_content.push(char);
             }
+            let content_length = string_content.len();
             return Token {
-                kind: TokenEnum::StringLiteral(string_content.clone()),
+                kind: TokenEnum::StringLiteral(string_content),
                 span: Span {
-                    start_char: self.next_char_index - string_content.len(),
+                    start_char: self.next_char_index - content_length,
                     end_char: self.current_char()
                 }
             };
         }
 
-        // Check for code comments (with #) and skip until next seperator
+        // Check for code comments (with #)
         if current_char == '#' {
+            let mut comment = String::new();
             while current_char != '\n' && current_char != ';' {
                 let next_char = self.next();
                 if next_char.is_none() {
-                    return Token {
-                        kind: TokenEnum::NoToken,
-                        span: self.current_char_span()
-                    }
+                    break;
                 };
                 current_char = next_char.unwrap();
+                comment.push(current_char);
+            }
+            let full_comment_length = comment.len();
+            let comment = comment.replace("\n", "").replace("\r","");
+            let comment_length = comment.len();
+            let comment_token = Token {
+                kind: TokenEnum::Comment(comment),
+                span: Span {
+                    start_char: self.next_char_index - full_comment_length - 1,
+                    end_char: self.current_char() - (full_comment_length - comment_length)
+                }
+            };
+            self.tokens.push(comment_token);
+            return Token {
+                kind: TokenEnum::Separator,
+                span: self.current_char_span()
             }
         }
 

@@ -154,6 +154,13 @@ impl CodeGenerator {
                 self.generate_code(index_into, indent_level);
                 self.add_with_indent(" get", indent_level);
             }
+            Node::CommentExpression(CommentExpression {comment, on}) => {
+                if let Some(on) = on {
+                    self.generate_code(on, indent_level);
+                }
+                let TokenEnum::Comment(comment_string) = &comment.kind else {unreachable!()};
+                self.add_with_indent(&format!(" #{}\n", comment_string), indent_level);
+            }
         }
     }
 }

@@ -5,7 +5,7 @@ fun fibonacii(n: Int) -> Int {
         last = 0
         current = 1
         counter = 0
-
+        # Do the loop
         while counter < n {
             new_current = last + current
             last = current
@@ -29,4 +29,5 @@ read_int() # Rename to read-int in output (- not supported in identifiers)
 n = factorial()
 println("N:" + str(n))
 value = fibonacii(n)
+# Print it out!
 println("Output: " + str(value))
