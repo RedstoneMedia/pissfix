@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use crate::{GetSpan, Span};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -117,7 +118,7 @@ impl TokenEnum {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Token {
     pub(crate) kind: TokenEnum,
     pub span: Span
@@ -128,4 +129,10 @@ impl GetSpan for Token {
         self.span.clone()
     }
 
+}
+
+impl Debug for Token {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.kind.fmt(f)
+    }
 }

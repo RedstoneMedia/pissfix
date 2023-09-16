@@ -17,17 +17,26 @@ fun fibonacii(n: Int) -> Int {
 }
 
 fun factorial(n: Int) -> Int {
-    value = 1
-    while n > 0 {
-        value *= n
+    product = 1
+    while n != 0 {
+        product *= n
         n -= 1
     }
-    value
+    product
 }
 
-read_int() # Rename to read-int in output (- not supported in identifiers)
-n = factorial()
-println("N:" + str(n))
-value = fibonacii(n)
-# Print it out!
-println("Output: " + str(value))
+read_int()
+in = factorial()
+println("Input: " + str(in))
+println("Output: " + str(fibonacii(in)))
+
+# Works (should be 11)
+println(4 - 9 / 3 + 5 * 2)
+# Also works
+println((4 - (9 / 3)) + (5 * 2))
+# Also works
+println(4 - (9 / 3) + 5 * 2)
+# Should be -9
+println(4 - ((9 / 3) + 5 * 2))
+# Should be 0
+println(1+2*((4-5)*(4-5))-6/2)

@@ -204,7 +204,7 @@ impl Lexer {
                 "and" => TokenEnum::And,
                 "or" => TokenEnum::Or,
                 "not" => TokenEnum::Not,
-                _ => TokenEnum::Identifier(identifier_string.replace("_", "-"))
+                _ => TokenEnum::Identifier(identifier_string.clone())
             };
 
             return Token {

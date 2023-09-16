@@ -84,7 +84,7 @@ impl CodeGenerator {
                     self.add_with_indent(" ", indent_level);
                 }
                 let TokenEnum::Identifier(ident) = &name.kind else {unreachable!()};
-                self.add_with_indent(ident, indent_level);
+                self.add_with_indent(&ident.replace("_", "-"), indent_level);
             }
             Node::ParenthesizedExpression(node) => self.generate_code(node, indent_level),
             Node::AssignmentExpression(AssignmentExpression {to, value, ..}) => {

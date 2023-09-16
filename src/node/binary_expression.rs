@@ -1,8 +1,9 @@
+use std::fmt::{Debug, Formatter};
 use crate::{GetSpan, Span};
 use crate::node::Node;
 use crate::token::Token;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct BinaryExpression {
     pub left: Box<Node>,
     pub operation: Token,
@@ -17,5 +18,16 @@ impl GetSpan for BinaryExpression {
             start_char,
             end_char,
         }
+    }
+}
+
+impl Debug for BinaryExpression {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            write!(f, "{},\n{},\n{}", format!("{:#?}", self.left), format!("{:#?}", self.operation), format!("{:#?}", self.right))
+        } else {
+            write!(f, "{} {} {}", format!("{:?}", self.left), format!("{:?}", self.operation), format!("{:?}", self.right))
+        }
+
     }
 }
