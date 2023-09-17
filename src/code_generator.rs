@@ -57,7 +57,7 @@ impl CodeGenerator {
                 self.generate_code(expression, indent_level);
                 let operation = match operation.kind {
                     TokenEnum::Plus => "",
-                    TokenEnum::Minus => "-",
+                    TokenEnum::Minus => "-1 *",
                     TokenEnum::Not => "not",
                     _ => unreachable!("")
                 };
