@@ -1,16 +1,28 @@
+# Works (should be 11)
+assert_eq(4 - 9 / 3 + 5 * 2, 11)
+# Also works
+assert_eq((4 - (9 / 3)) + (5 * 2), 11)
+# Also works
+assert_eq(4 - (9 / 3) + 5 * 2, 11)
+# Should be -9
+assert_eq(4 - ((9 / 3) + 5 * 2), -9)
+# Should be 0
+assert_eq(1+2*((4-5)*(4-5))-6/2, 0)
+# Should be -1
+assert_eq(-1*(2+3)/5, -1)
+test_stats()
+
 fun fibonacii(n: Int) -> Int {
     if n == 0 {
         0
     } else {
         last = 0
         current = 1
-        counter = 0
         # Do the loop
-        while counter < n {
+        for _ in 0..n {
             new_current = last + current
             last = current
             current = new_current
-            counter += 1
         }
         current
     }
@@ -19,26 +31,13 @@ fun fibonacii(n: Int) -> Int {
 fun factorial(n: Int) -> Int {
     product = 1
     while n != 0 {
-        product *= n
+        product *= n # Henklo
         n -= 1
     }
     product
 }
 
 read_int()
-in = factorial()
-println("Input: " + str(in))
-println("Output: " + str(fibonacii(in)))
-
-# Works (should be 11)
-println(4 - 9 / 3 + 5 * 2)
-# Also works
-println((4 - (9 / 3)) + (5 * 2))
-# Also works
-println(4 - (9 / 3) + 5 * 2)
-# Should be -9
-println(4 - ((9 / 3) + 5 * 2))
-# Should be 0
-println(1+2*((4-5)*(4-5))-6/2)
-# Shuld also be 0
-println(-1*(2+3)/5)
+fact = factorial()
+println("Input: " + str(fact))
+println("Output: " + str(fibonacii(fact)))

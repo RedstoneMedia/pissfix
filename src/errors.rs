@@ -1,4 +1,5 @@
 use crate::Span;
+use colored::Colorize;
 
 #[derive(Clone, Debug)]
 pub enum ErrorKind {
@@ -41,14 +42,19 @@ impl Error {
         let start_char_index_in_line = self.start_char - line_start_char_index - (start_line-1);
         let mut pointer_string = (0..start_char_index_in_line).map(|_| " ").collect::<String>();
         pointer_string += &(self.start_char - line_start_char_index..self.end_char - line_start_char_index + 1).map(|_| "^").collect::<String>();
-        String::from(format!(
-            "[{:?}] {}:{} {}\n{}\n{}",
+
+        let error_message = format!(
+            "[{:?}] {} {}",
             self.kind,
-            start_line,
-            start_char_index_in_line,
-            self.text,
+            format!("{}:{}", start_line, start_char_index_in_line).blue(),
+            self.text.white().bold()
+        );
+
+        String::from(format!(
+            "{}\n{}\n{}",
+            error_message.bright_red().bold(),
             relevant_lines.join("\n"),
-            pointer_string
+            pointer_string.red()
         ))
     }
 

@@ -2,7 +2,13 @@ use crate::node::{Node, prelude::*};
 use crate::token::TokenEnum;
 
 const INDENT: &'static str = "    ";
-const MAX_LINE_LENGTH: usize = 50;
+const MAX_LINE_LENGTH: usize = 60;
+
+const FUNCTION_REPLACEMENTS: [(&'static str, &'static str); 3] = [
+    ("assert_eq", "test="),
+    ("assert_neq", "test!="),
+    ("_", "-"),
+];
 
 #[derive(Default)]
 pub struct CodeGenerator {
@@ -48,6 +54,11 @@ impl CodeGenerator {
                     TokenEnum::Or => "or",
                     TokenEnum::DoubleEquals => "=",
                     TokenEnum::NotEquals => "!=",
+                    TokenEnum::Range(inclusive) => if inclusive {
+                        "1 +"
+                    } else {
+                        return;
+                    }
                     _ => unreachable!()
                 };
                 let operation = format!(" {}\n", operation);
@@ -84,7 +95,7 @@ impl CodeGenerator {
                     self.add_with_indent(" ", indent_level);
                 }
                 let TokenEnum::Identifier(ident) = &name.kind else {unreachable!()};
-                self.add_with_indent(&ident.replace("_", "-"), indent_level);
+                self.add_with_indent(&replace_function_ident(ident), indent_level);
             }
             Node::ParenthesizedExpression(node) => self.generate_code(node, indent_level),
             Node::AssignmentExpression(AssignmentExpression {to, value, ..}) => {
@@ -116,6 +127,7 @@ impl CodeGenerator {
             }
             Node::FunctionExpression(FunctionExpression { name, parameters, return_type, body, .. }) => {
                 let TokenEnum::Identifier(name_ident) = &name.kind else {unreachable!()};
+                let name_ident = replace_function_ident(name_ident);
                 self.add_with_indent(&format!(":{}(", name_ident), indent_level);
                 for parameter in parameters {
                     let TokenEnum::Identifier(parameter_name) = &parameter.name.kind else {unreachable!()};
@@ -146,6 +158,24 @@ impl CodeGenerator {
                 self.generate_code(&modified_body, indent_level);
                 self.add_with_indent(" loop", indent_level);
             }
+            Node::ForExpression(ForExpression {iteration_var, iterate_over, body , ..}) => {
+                let iteration_var = match &iteration_var.kind {
+                    TokenEnum::Identifier(var) => Some(var),
+                    TokenEnum::Underscore => None,
+                    _ => unreachable!()
+                };
+                // Modify body ast to include binding iteration value to variable (or drop the variable with '_')
+                let mut modified_body = *body.clone();
+                let Node::ExpressionList(ExpressionList {expressions, ..}) = &mut modified_body else {unreachable!("A while expression always has a expression list body")};
+                if let Some(var) = iteration_var {
+                    expressions.insert(0, Node::_Verbatim(format!(" {}!", var)));
+                } else {
+                    expressions.insert(0, Node::_Verbatim(" pop".to_string()));
+                }
+                self.generate_code(&iterate_over, indent_level);
+                self.generate_code(&modified_body, indent_level);
+                self.add_with_indent(" for", indent_level);
+            }
             Node::ReturnExpression(ReturnExpression {expression, ..}) => self.generate_code(expression, indent_level),
             Node::BreakExpression(BreakExpression {..}) => self.add_with_indent("break", indent_level),
             Node::IndexExpression(IndexExpression { index_value, index_into, ..}) => {
@@ -159,9 +189,21 @@ impl CodeGenerator {
                     self.generate_code(on, indent_level);
                 }
                 let TokenEnum::Comment(comment_string) = &comment.kind else {unreachable!()};
-                self.add_with_indent(&format!(" #{}\n", comment_string), indent_level);
+                self.add_with_indent(&format!(" #{}{}", comment_string, if on.is_some() {"\n"} else {""}), indent_level);
+            },
+            Node::_Verbatim(code) => {
+                self.add_with_indent(&code, indent_level);
             }
         }
     }
 }
 
+
+fn replace_function_ident(ident_str: &str) -> String {
+    let mut out = ident_str.replace(FUNCTION_REPLACEMENTS[0].0, FUNCTION_REPLACEMENTS[0].1);
+    for i in 1..FUNCTION_REPLACEMENTS.len() {
+        let (x, with) = FUNCTION_REPLACEMENTS[i];
+        out = out.replace(x, with);
+    }
+    out
+}

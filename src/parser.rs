@@ -72,6 +72,93 @@ impl Parser {
         Ok(Node::CallExpression(CallExpression { name: token, closing_parenthesis: closing_parenthesis_token, arguments}))
     }
 
+    fn parse_function_definition(&mut self, token : Token, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<Node, Error> {
+        // Get function name
+        let function_name_identifier_token = self.next();
+        if let TokenEnum::Identifier(_) = function_name_identifier_token.kind {} else {
+            return Err(Error::from_span(
+                function_name_identifier_token.span,
+                format!("The function keyword is always followed by an identifier, but got: {:?}", function_name_identifier_token),
+                ErrorKind::ParsingError)
+            );
+        }
+        // Check for "("
+        if self.next().kind != TokenEnum::OpeningParentheses {
+            return Err(Error::from_span(
+                self.tokens[self.next_token - 1].span.clone(),
+                format!("Expected Opening Parentheses"),
+                ErrorKind::ParsingError
+            ));
+        }
+        // Parse argument list until ")"
+        let mut parameters = vec![];
+        let closing_parenthesis_token = loop {
+            let new_token = self.next();
+            match new_token.kind {
+                TokenEnum::ClosingParentheses => break new_token,
+                TokenEnum::Identifier(..) => {
+                    let colon_token = self.next();
+                    if colon_token.kind != TokenEnum::DoublePoint {
+                        return Err(Error::from_span(
+                            colon_token.span,
+                            format!("Expected Type annotation after parameter name, but got: {:?}", colon_token),
+                            ErrorKind::ParsingError
+                        ))
+                    }
+
+                    let parameter_token = self.next();
+                    if let TokenEnum::Identifier(_) = parameter_token.kind {} else {
+                        return Err(Error::from_span(
+                            colon_token.span,
+                            format!("Expected type after parameter name, but got: {:?}", colon_token),
+                            ErrorKind::ParsingError
+                        ))
+                    }
+
+                    parameters.push(FunctionParameter {
+                        name: new_token,
+                        colon: colon_token,
+                        parameter_type: parameter_token,
+                    })
+                },
+                TokenEnum::Comma => continue,
+                _ => return Err(Error::from_span(new_token.span,format!("Unexpected token in function parameter list: {:?}", new_token), ErrorKind::ParsingError))
+            }
+        };
+
+        let possible_arrow_token = self.peek_next(0);
+        let mut return_type = None;
+        if TokenEnum::Arrow == possible_arrow_token.kind {
+            self.next_token += 1;
+            let return_type_token = self.next();
+
+            if let TokenEnum::Identifier(_) = return_type_token.kind {} else { //
+                return Err(Error::from_span(
+                    return_type_token.span,
+                    format!("Expected return type after arrow, but got : {:?}", return_type_token),
+                    ErrorKind::ParsingError
+                ));
+            }
+
+            return_type = Some(FunctionReturnType {
+                arrow: possible_arrow_token,
+                return_type: return_type_token,
+            });
+        }
+
+        // Parse function body
+        let body = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+        // Return function expression
+        Ok(Node::FunctionExpression(FunctionExpression {
+            keyword: token,
+            name: function_name_identifier_token,
+            parameters,
+            closing_parenthesis: closing_parenthesis_token,
+            body: Box::new(body),
+            return_type
+        }))
+    }
+
     fn parse_sub_expression(&mut self, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<Node, Error> {
         let mut token = self.next();
         // Skip separator
@@ -139,91 +226,7 @@ impl Parser {
             }
             Ok(Node::IfExpression(IfExpression { keyword: token, condition: Box::new(condition_expression), true_branch: Box::new(true_branch_expression), false_branch }))
         } else if let TokenEnum::FunctionKeyword = token.kind {
-            // TODO: Move into own function
-            // Get function name
-            let function_name_identifier_token = self.next();
-            if let TokenEnum::Identifier(_) = function_name_identifier_token.kind {} else {
-                return Err(Error::from_span(
-                    function_name_identifier_token.span,
-                    format!("The function keyword is always followed by an identifier, but got: {:?}", function_name_identifier_token),
-                    ErrorKind::ParsingError)
-                );
-            }
-            // Check for "("
-            if self.next().kind != TokenEnum::OpeningParentheses {
-                return Err(Error::from_span(
-                    self.tokens[self.next_token - 1].span.clone(),
-                    format!("Expected Opening Parentheses"),
-                    ErrorKind::ParsingError
-                ));
-            }
-            // Parse argument list until ")"
-            let mut parameters = vec![];
-            let closing_parenthesis_token = loop {
-                let new_token = self.next();
-                match new_token.kind {
-                    TokenEnum::ClosingParentheses => break new_token,
-                    TokenEnum::Identifier(..) => {
-                        let colon_token = self.next();
-                        if colon_token.kind != TokenEnum::DoublePoint {
-                            return Err(Error::from_span(
-                                colon_token.span,
-                                format!("Expected Type annotation after parameter name, but got: {:?}", colon_token),
-                                ErrorKind::ParsingError
-                            ))
-                        }
-
-                        let parameter_token = self.next();
-                        if let TokenEnum::Identifier(_) = parameter_token.kind {} else {
-                            return Err(Error::from_span(
-                                colon_token.span,
-                                format!("Expected type after parameter name, but got: {:?}", colon_token),
-                                ErrorKind::ParsingError
-                            ))
-                        }
-
-                        parameters.push(FunctionParameter {
-                            name: new_token,
-                            colon: colon_token,
-                            parameter_type: parameter_token,
-                        })
-                    },
-                    TokenEnum::Comma => continue,
-                    _ => return Err(Error::from_span(new_token.span,format!("Unexpected token in function parameter list : {:?}", new_token), ErrorKind::ParsingError))
-                }
-            };
-
-            let possible_arrow_token = self.peek_next(0);
-            let mut return_type = None;
-            if TokenEnum::Arrow == possible_arrow_token.kind {
-                self.next_token += 1;
-                let return_type_token = self.next();
-
-                if let TokenEnum::Identifier(_) = return_type_token.kind {} else { //
-                    return Err(Error::from_span(
-                        return_type_token.span,
-                        format!("Expected return type after arrow, but got : {:?}", return_type_token),
-                        ErrorKind::ParsingError
-                    ));
-                }
-
-                return_type = Some(FunctionReturnType {
-                    arrow: possible_arrow_token,
-                    return_type: return_type_token,
-                });
-            }
-
-            // Parse function body
-            let body = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
-            // Return function expression
-            Ok(Node::FunctionExpression(FunctionExpression {
-                keyword: token,
-                name: function_name_identifier_token,
-                parameters,
-                closing_parenthesis: closing_parenthesis_token,
-                body: Box::new(body),
-                return_type
-            }))
+            self.parse_function_definition(token, last_precedence, stop_token_check, error_tracker)
         } else if let TokenEnum::WhileKeyword = token.kind {
             // Parse condition
             let condition_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
@@ -246,6 +249,39 @@ impl Parser {
             // Parse while body
             let body_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
             Ok(Node::WhileExpression(WhileExpression { keyword: token, condition: Box::new(condition_expression), body: Box::new(body_expression) }))
+        } else if let TokenEnum::ForKeyword = token.kind {
+            // Check iteration variable type
+            let iteration_variable = self.next();
+            match iteration_variable.kind {
+                TokenEnum::Identifier(_) => {},
+                TokenEnum::Underscore => {},
+                _ => return Err(Error::from_span(
+                    iteration_variable.span,
+                    format!("Unexpected iteration variable in for loop: {:?}", iteration_variable),
+                    ErrorKind::ParsingError
+                ))
+            }
+            let in_keyword = self.next();
+            if TokenEnum::InKeyword != in_keyword.kind {
+                return Err(Error::from_span(
+                    in_keyword.span,
+                    format!("Expected \"in\" keyword, but got: {:?}", in_keyword),
+                    ErrorKind::ParsingError
+                ))
+            }
+            // Parse range
+            let iterate_over_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
+            // Make "{" the token that will be acquired when calling next in parse_sub_expression
+            self.seperator_back_until(|t| t.kind == TokenEnum::OpeningBrace);
+            // Parse while body
+            let body_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+            Ok(Node::ForExpression(ForExpression {
+                keyword: token,
+                iteration_var: iteration_variable,
+                in_keyword,
+                iterate_over: Box::new(iterate_over_expression),
+                body: Box::new(body_expression),
+            }))
         } else if let TokenEnum::ReturnKeyword = token.kind {
             // TODO: Make providing a return value optional
             let return_value_expression = self.parse_expression_until_line_end(stop_token_check, error_tracker)?;
@@ -259,7 +295,7 @@ impl Parser {
                 on: None
             }))
         } else {
-            Err(Error::from_span(token.span,format!("Unexpected sub expression token : {:?}", token), ErrorKind::ParsingError))
+            Err(Error::from_span(token.span,format!("Unexpected sub expression token: {:?}", token), ErrorKind::ParsingError))
         }
     }
 
@@ -308,7 +344,7 @@ impl Parser {
             if let Node::IdentifierExpression(_) = sub_expression.clone() {
             } else if let Node::IndexExpression(_) = sub_expression.clone() {
             } else {
-                return Err(Error::from_span(operator.span,format!("Unexpected sub expression for assignment : {:?}", sub_expression), ErrorKind::ParsingError));
+                return Err(Error::from_span(operator.span,format!("Unexpected sub expression for assignment: {:?}", sub_expression), ErrorKind::ParsingError));
             }
             // Parse expression to assign to
             let mut assign_expression = self.parse_expression_until_line_end(stop_token_check, error_tracker)?; // Parse whole line since assignment is always the last step
@@ -353,7 +389,7 @@ impl Parser {
         } else {
             Err(Error::from_span(
                 operator.span,
-                format!("Unexpected operator token : {:?}", operator),
+                format!("Unexpected operator token: {:?}", operator),
                 ErrorKind::ParsingError
             ))
         }

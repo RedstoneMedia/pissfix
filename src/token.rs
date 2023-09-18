@@ -12,9 +12,11 @@ pub enum TokenEnum {
 
     IfKeyword,
     WhileKeyword,
+    ForKeyword,
     ElseKeyword,
     FunctionKeyword,
 
+    InKeyword,
     ReturnKeyword,
     BreakKeyword,
 
@@ -29,15 +31,16 @@ pub enum TokenEnum {
     Not,
     DoubleEquals,
     NotEquals,
+    Range(bool),
 
     Equals,
     OperatorEquals(Box<TokenEnum>),
 
     Separator,
-    Dot,
     Comma,
     DoublePoint,
     Arrow,
+    Underscore,
 
     OpeningParentheses,
     ClosingParentheses,
@@ -68,13 +71,13 @@ impl TokenEnum {
             TokenEnum::Minus => true,
             TokenEnum::Multiply => true,
             TokenEnum::Divide => true,
-            TokenEnum::Dot => true,
             TokenEnum::GreaterThan => true,
             TokenEnum::LessThan => true,
             TokenEnum::DoubleEquals => true,
             TokenEnum::NotEquals => true,
             TokenEnum::And => true,
             TokenEnum::Or => true,
+            TokenEnum::Range(_) => true,
             _ => false
         }
     }
@@ -105,7 +108,6 @@ impl TokenEnum {
             TokenEnum::Minus => Some(3),
             TokenEnum::Multiply => Some(4),
             TokenEnum::Divide => Some(4),
-            TokenEnum::Dot => Some(5),
 
             TokenEnum::GreaterThan => Some(2),
             TokenEnum::LessThan => Some(2),
@@ -113,6 +115,8 @@ impl TokenEnum {
             TokenEnum::NotEquals => Some(2),
             TokenEnum::And => Some(1),
             TokenEnum::Or => Some(1),
+
+            TokenEnum::Range(_) => Some(1),
             _ => None
         }
     }

@@ -12,7 +12,7 @@ pub struct Lexer {
 
 
 impl Lexer {
-    pub fn new(text: String) -> Self {
+    pub fn new(text: &str) -> Self {
         let chars = text.chars().collect::<Vec<_>>();
         Self {
             chars,
@@ -67,7 +67,7 @@ impl Lexer {
             current_char_index += 1;
         };
 
-        for _ in 0..keyword.len() {
+        for _ in 0..keyword.len()-1 {
             self.next_char_index += 1;
         }
         true
@@ -99,10 +99,7 @@ impl Lexer {
             let content_length = string_content.len();
             return Token {
                 kind: TokenEnum::StringLiteral(string_content),
-                span: Span {
-                    start_char: self.next_char_index - content_length,
-                    end_char: self.current_char()
-                }
+                span: self.current_span_with_length(content_length + 2)
             };
         }
 
@@ -147,6 +144,12 @@ impl Lexer {
                     if peeked_char == '.' && !found_dot {
                         found_dot = true
                     } else if peeked_char == '.' && found_dot {
+                        if number_string.chars().last().unwrap() == '.' {
+                            // We have a range
+                            number_string.remove(number_string.len()-1);
+                            self.next_char_index -= 1;
+                            break;
+                        }
                         error_tracker.add_error(Error {
                             text: "Found float literal with more than one dot".to_string(),
                             start_char: self.next_char_index,
@@ -188,13 +191,23 @@ impl Lexer {
                     self.next_char_index += 1;
                 } else { break };
             }
-
+            let can_be_keyword = self.peek_next(0)
+                .map(|next| next == ' ' || next == '\n' || next == ';')
+                .unwrap_or(true);
+            if !can_be_keyword {
+                return Token {
+                    kind: TokenEnum::Identifier(identifier_string.clone()),
+                    span: self.current_span_with_length(identifier_string.len())
+                };
+            }
             // Check for Keywords
             let token_kind = match identifier_string.as_str() {
                 "fun" => TokenEnum::FunctionKeyword,
                 "return" => TokenEnum::ReturnKeyword,
                 "break" => TokenEnum::BreakKeyword,
+                "in" => TokenEnum::InKeyword,
                 "while" => TokenEnum::WhileKeyword,
+                "for" => TokenEnum::ForKeyword,
                 "if" => TokenEnum::IfKeyword,
                 "else" => TokenEnum::ElseKeyword,
                 // Boolean and none literal keywords
@@ -206,7 +219,6 @@ impl Lexer {
                 "not" => TokenEnum::Not,
                 _ => TokenEnum::Identifier(identifier_string.clone())
             };
-
             return Token {
                 kind: token_kind,
                 span: self.current_span_with_length(identifier_string.len())
@@ -216,6 +228,15 @@ impl Lexer {
         if self.has_sequence(current_char, "==") { return Token { kind: TokenEnum::DoubleEquals, span: self.current_span_with_length(2) } };
         if self.has_sequence(current_char, "!=") { return Token { kind: TokenEnum::NotEquals, span: self.current_span_with_length(2) } };
         if self.has_sequence(current_char, "->") { return Token { kind: TokenEnum::Arrow, span: self.current_span_with_length(2) } };
+        if self.has_sequence(current_char, "..") {
+            let mut length = 2;
+            let inclusive_range = self.peek_next(0).map(|c| c == '=').unwrap_or(false);
+            if inclusive_range {
+                length += 1;
+                self.next_char_index += 1;
+            }
+            return Token { kind: TokenEnum::Range(inclusive_range), span: self.current_span_with_length(length)}
+        }
 
         // Single
         let token_kind = match current_char {
@@ -233,7 +254,6 @@ impl Lexer {
                 TokenEnum::Separator
             },
             ';' => TokenEnum::Separator,
-            '.' => TokenEnum::Dot,
             ',' => TokenEnum::Comma,
             ':' => TokenEnum::DoublePoint,
             '{' => TokenEnum::OpeningBrace,
@@ -242,6 +262,7 @@ impl Lexer {
             ')' => TokenEnum::ClosingParentheses,
             '[' => TokenEnum::OpeningBracket,
             ']' => TokenEnum::ClosingBracket,
+            '_' => TokenEnum::Underscore,
             _ => {
                 error_tracker.add_error(Error::from_span(
                     self.current_char_span(),

@@ -10,6 +10,7 @@ mod expression_list;
 mod return_expression;
 mod break_expression;
 mod comment;
+mod for_expression;
 
 pub use crate::{GetSpan, Span};
 
@@ -25,6 +26,7 @@ pub(super) mod prelude {
     pub use crate::node::index_expression::IndexExpression;
     pub use crate::node::return_expression::ReturnExpression;
     pub use crate::node::while_expression::WhileExpression;
+    pub use crate::node::for_expression::ForExpression;
     pub use crate::node::comment::CommentExpression;
     pub use crate::token::Token;
 }
@@ -45,10 +47,14 @@ pub enum Node {
     IfExpression(IfExpression),
     FunctionExpression(FunctionExpression),
     WhileExpression(WhileExpression),
+    ForExpression(ForExpression),
     ReturnExpression(ReturnExpression),
     BreakExpression(BreakExpression),
     IndexExpression(IndexExpression),
-    CommentExpression(CommentExpression)
+    CommentExpression(CommentExpression),
+    /// Internally used by compiler
+    /// Used to directly insert postfix code (which might not be able to be represented by the pissfix ast)
+    _Verbatim(String)
 }
 
 impl GetSpan for Node {
@@ -65,10 +71,12 @@ impl GetSpan for Node {
             Node::IfExpression(e) => e.get_span(),
             Node::FunctionExpression(e) => e.get_span(),
             Node::WhileExpression(e) => e.get_span(),
+            Node::ForExpression(e) => e.get_span(),
             Node::ReturnExpression(e) => e.get_span(),
             Node::BreakExpression(e) => e.get_span(),
             Node::IndexExpression(e) => e.get_span(),
-            Node::CommentExpression(e) => e.get_span()
+            Node::CommentExpression(e) => e.get_span(),
+            Node::_Verbatim(_) => panic!("Internal verbatim does not have a associated span"),
         }
     }
 }
