@@ -83,6 +83,7 @@ impl Lexer {
 
         // Check for String literal
         if current_char == '"' {
+            let mut escaped = false;
             let mut string_content = String::new();
             loop {
                 let result_char = self.next();
@@ -93,7 +94,11 @@ impl Lexer {
                     }
                 }
                 let char = result_char.unwrap();
-                if char == '"' { break };
+                if char == '"' && !escaped { break };
+                escaped = char == '\\' && !escaped;
+                if escaped {
+                    continue;
+                }
                 string_content.push(char);
             }
             let content_length = string_content.len();

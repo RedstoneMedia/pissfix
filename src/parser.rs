@@ -1,7 +1,6 @@
-use crate::token::{TokenEnum, Token};
-use crate::node::{prelude::*, Node};
-use crate::node::function_expression::{FunctionParameter, FunctionReturnType};
-use crate::errors::{ErrorTracker, Error, ErrorKind};
+use crate::token::{Token, TokenEnum};
+use crate::node::{Node, prelude::*};
+use crate::errors::{Error, ErrorKind, ErrorTracker};
 use crate::{GetSpan, Span};
 
 
@@ -72,24 +71,7 @@ impl Parser {
         Ok(Node::CallExpression(CallExpression { name: token, closing_parenthesis: closing_parenthesis_token, arguments}))
     }
 
-    fn parse_function_definition(&mut self, token : Token, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<Node, Error> {
-        // Get function name
-        let function_name_identifier_token = self.next();
-        if let TokenEnum::Identifier(_) = function_name_identifier_token.kind {} else {
-            return Err(Error::from_span(
-                function_name_identifier_token.span,
-                format!("The function keyword is always followed by an identifier, but got: {:?}", function_name_identifier_token),
-                ErrorKind::ParsingError)
-            );
-        }
-        // Check for "("
-        if self.next().kind != TokenEnum::OpeningParentheses {
-            return Err(Error::from_span(
-                self.tokens[self.next_token - 1].span.clone(),
-                format!("Expected Opening Parentheses"),
-                ErrorKind::ParsingError
-            ));
-        }
+    fn parse_base_function_definition(&mut self, opening_parenthesis_token: Token, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<BaseFunctionExpression, Error> {
         // Parse argument list until ")"
         let mut parameters = vec![];
         let closing_parenthesis_token = loop {
@@ -122,6 +104,7 @@ impl Parser {
                     })
                 },
                 TokenEnum::Comma => continue,
+                TokenEnum::Separator => continue,
                 _ => return Err(Error::from_span(new_token.span,format!("Unexpected token in function parameter list: {:?}", new_token), ErrorKind::ParsingError))
             }
         };
@@ -148,14 +131,40 @@ impl Parser {
 
         // Parse function body
         let body = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+        Ok(BaseFunctionExpression {
+            opening_parenthesis: opening_parenthesis_token,
+            parameters,
+            closing_parenthesis: closing_parenthesis_token,
+            return_type,
+            body: Box::new(body),
+        })
+    }
+
+    fn parse_function_definition(&mut self, token : Token, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<Node, Error> {
+        // Get function name
+        let function_name_identifier_token = self.next();
+        if let TokenEnum::Identifier(_) = function_name_identifier_token.kind {} else {
+            return Err(Error::from_span(
+                function_name_identifier_token.span,
+                format!("The function keyword is always followed by an identifier, but got: {:?}", function_name_identifier_token),
+                ErrorKind::ParsingError)
+            );
+        }
+        // Check for "(" of parameter list
+        let opening_parenthesis_token = self.next();
+        if opening_parenthesis_token.kind != TokenEnum::OpeningParentheses {
+            return Err(Error::from_span(
+                self.tokens[self.next_token - 1].span.clone(),
+                format!("Expected Opening Parentheses"),
+                ErrorKind::ParsingError
+            ));
+        }
+        let base = self.parse_base_function_definition(opening_parenthesis_token, last_precedence, stop_token_check, error_tracker)?;
         // Return function expression
         Ok(Node::FunctionExpression(FunctionExpression {
             keyword: token,
             name: function_name_identifier_token,
-            parameters,
-            closing_parenthesis: closing_parenthesis_token,
-            body: Box::new(body),
-            return_type
+            base
         }))
     }
 
@@ -176,26 +185,23 @@ impl Parser {
 
             match peeked_next.kind {
                 TokenEnum::OpeningParentheses => {
-                    //println!("Function call detected");
                     self.next_token += 1;
                     return Ok(self.parse_function_call(token, last_precedence, error_tracker)?);
-                },
-                TokenEnum::OpeningBracket => {
-                    //println!("Indexing detected");
-                    self.next_token += 1;
-                    let index_value_expr = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::ClosingBracket), error_tracker)?;
-                    return Ok(Node::IndexExpression(IndexExpression {
-                        opening_bracket: peeked_next,
-                        index_value: Box::new(index_value_expr),
-                        index_into: Box::new(Node::IdentifierExpression(token)),
-                        closing_bracket: self.tokens[self.next_token - 1].clone(),
-                    }));
                 }
                 _ => {}
             }
             Ok(Node::IdentifierExpression(token))
         } else if let TokenEnum::OpeningParentheses = token.kind {
-            // Parse expression until ')'
+            // Check for anonymous function first
+            let mut i = 0;
+            while self.peek_next(i).kind != TokenEnum::ClosingParentheses {
+                i += 1;
+            }
+            if self.peek_next(i+1).kind == TokenEnum::OpeningBrace {
+                let base = self.parse_base_function_definition(token, last_precedence, stop_token_check, error_tracker)?;
+                return Ok(Node::AnonymousFunctionExpression(base));
+            }
+            // Parse expression until ')' and parse as normal ParenthesizedExpression
             let expression = self.parse_expression_until(0, &|t| t == TokenEnum::ClosingParentheses, error_tracker)?;
             Ok(Node::ParenthesizedExpression(Box::new(expression)))
         } else if token.kind.is_unary_operator_token() {
@@ -210,6 +216,8 @@ impl Parser {
             // Parse true branch until "}"
             let expression_list = self.parse_expression_list_until(token, &Some(|t| t == TokenEnum::ClosingBrace), error_tracker);
             Ok(expression_list)
+        } else if let TokenEnum::OpeningBracket = token.kind {
+            unimplemented!("Array literals are not defined")
         } else if let TokenEnum::IfKeyword = token.kind {
             // Parse condition
             let condition_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
@@ -330,6 +338,18 @@ impl Parser {
             return Ok((Node::CommentExpression(CommentExpression {
                 comment: operator,
                 on: Some(Box::new(sub_expression)),
+            }), false));
+        }
+
+        // Handle index expressions
+        if operator.kind == TokenEnum::OpeningBracket {
+            self.next_token += 1;
+            let index_value_expr = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::ClosingBracket), error_tracker)?;
+            return Ok((Node::IndexExpression(IndexExpression {
+                opening_bracket: operator,
+                index_value: Box::new(index_value_expr),
+                index_into: Box::new(sub_expression),
+                closing_bracket: self.tokens[self.next_token - 1].clone(),
             }), false));
         }
 

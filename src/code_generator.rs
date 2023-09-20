@@ -4,9 +4,12 @@ use crate::token::TokenEnum;
 const INDENT: &'static str = "    ";
 const MAX_LINE_LENGTH: usize = 60;
 
-const FUNCTION_REPLACEMENTS: [(&'static str, &'static str); 3] = [
-    ("assert_eq", "test="),
-    ("assert_neq", "test!="),
+const FUNCTION_REPLACEMENTS: [(&'static str, &'static str); 6] = [
+    ("test_eq", "test="),
+    ("test_neq", "test!="),
+    ("char_to_str", "char->str"),
+    ("chars_to_str", "chars->str"),
+    ("str_to_chars", "str->chars"),
     ("_", "-"),
 ];
 
@@ -34,6 +37,24 @@ impl CodeGenerator {
         if current_line_length > MAX_LINE_LENGTH && !add.ends_with("\n") {
             self.code += "\n";
         }
+    }
+
+    fn generate_base_function_code(&mut self, anonymous_function_expression: &BaseFunctionExpression, indent_level: usize) {
+        let BaseFunctionExpression {parameters, return_type, body, ..} = anonymous_function_expression;
+        self.add_with_indent("(", indent_level);
+        for parameter in parameters {
+            let TokenEnum::Identifier(parameter_name) = &parameter.name.kind else {unreachable!()};
+            let TokenEnum::Identifier(parameter_type) = &parameter.parameter_type.kind else {unreachable!()};
+            self.add_with_indent(&format!("{} :{}, ", parameter_name, parameter_type), indent_level);
+        }
+        self.code.pop(); // Removes unnecessary trailing ' '
+        self.code.pop(); // Removes unnecessary trailing ','
+        if let Some(return_type) = return_type {
+            let TokenEnum::Identifier(return_type_ident) = &return_type.return_type.kind else {unreachable!()};
+            self.add_with_indent(&format!(" -> :{}", return_type_ident), indent_level);
+        };
+        self.add_with_indent(") ", indent_level);
+        self.generate_code(body, indent_level);
     }
 
     pub fn generate_code(&mut self, node: &Node, indent_level: usize) {
@@ -80,7 +101,7 @@ impl CodeGenerator {
                     TokenEnum::Number(number) => format!("{}", number),
                     TokenEnum::FloatLiteral(float) => format!("{}", float),
                     TokenEnum::BooleanLiteral(boolean) => format!("{}", boolean),
-                    TokenEnum::StringLiteral(string) => format!("\"{}\"", string),
+                    TokenEnum::StringLiteral(string) => format!("\"{}\"", string.replace("\"", "\\\"")),
                     _ => unreachable!()
                 };
                 self.add_with_indent(&literal, indent_level);
@@ -99,9 +120,21 @@ impl CodeGenerator {
             }
             Node::ParenthesizedExpression(node) => self.generate_code(node, indent_level),
             Node::AssignmentExpression(AssignmentExpression {to, value, ..}) => {
-                self.generate_code(value, indent_level);
-                self.add_with_indent(" ", indent_level);
-                self.generate_code(to, indent_level);
+                if let Node::IndexExpression(IndexExpression {index_value, index_into, ..}) = &**to {
+                    // This is required as a normally generating the code for a index expression would use the get function, but we need set here
+                    // TODO: Does not work for nested arrays eg: a[0][1] = 2. Maybe do something at parse level
+                    self.generate_code(index_into, indent_level);
+                    self.add_with_indent(" ", indent_level);
+                    self.generate_code(index_value, indent_level);
+                    self.add_with_indent(" ", indent_level);
+                    self.generate_code(value, indent_level);
+                    self.add_with_indent(" set ", indent_level);
+                    self.generate_code(index_into, indent_level);
+                } else {
+                    self.generate_code(value, indent_level);
+                    self.add_with_indent(" ", indent_level);
+                    self.generate_code(to, indent_level);
+                }
                 self.add_with_indent("!", indent_level);
             },
             Node::ExpressionList(ExpressionList {expressions, ..}) => {
@@ -125,23 +158,16 @@ impl CodeGenerator {
                 };
                 self.add_with_indent(" if", indent_level);
             }
-            Node::FunctionExpression(FunctionExpression { name, parameters, return_type, body, .. }) => {
+            Node::FunctionExpression(FunctionExpression { name, base, ..}) => {
                 let TokenEnum::Identifier(name_ident) = &name.kind else {unreachable!()};
                 let name_ident = replace_function_ident(name_ident);
-                self.add_with_indent(&format!(":{}(", name_ident), indent_level);
-                for parameter in parameters {
-                    let TokenEnum::Identifier(parameter_name) = &parameter.name.kind else {unreachable!()};
-                    let TokenEnum::Identifier(parameter_type) = &parameter.parameter_type.kind else {unreachable!()};
-                    self.add_with_indent(&format!("{} :{},", parameter_name, parameter_type), indent_level);
-                }
-                self.code.pop(); // Removes unnecessary trailing ','
-                if let Some(return_type) = return_type {
-                    let TokenEnum::Identifier(return_type_ident) = &return_type.return_type.kind else {unreachable!()};
-                    self.add_with_indent(&format!(" -> :{}", return_type_ident), indent_level);
-                };
-                self.add_with_indent(") ", indent_level);
-                self.generate_code(body, indent_level);
+                self.add_with_indent(&format!(":{}", name_ident), indent_level);
+                self.generate_base_function_code(&base, indent_level);
                 self.add_with_indent(" fun\n\n", indent_level);
+            }
+            Node::AnonymousFunctionExpression(base) => {
+                self.generate_base_function_code(&base, indent_level);
+                self.add_with_indent(" lam\n", indent_level);
             }
             Node::WhileExpression(WhileExpression {condition, body , ..}) => {
                 // Modify body ast to include breaking when condition is met (calling the breakif function)
@@ -179,9 +205,9 @@ impl CodeGenerator {
             Node::ReturnExpression(ReturnExpression {expression, ..}) => self.generate_code(expression, indent_level),
             Node::BreakExpression(BreakExpression {..}) => self.add_with_indent("break", indent_level),
             Node::IndexExpression(IndexExpression { index_value, index_into, ..}) => {
-                self.generate_code(index_value, indent_level);
-                self.add_with_indent(" ", indent_level);
                 self.generate_code(index_into, indent_level);
+                self.add_with_indent(" ", indent_level);
+                self.generate_code(index_value, indent_level);
                 self.add_with_indent(" get", indent_level);
             }
             Node::CommentExpression(CommentExpression {comment, on}) => {

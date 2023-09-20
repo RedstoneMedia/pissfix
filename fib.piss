@@ -1,15 +1,30 @@
 # Works (should be 11)
-assert_eq(4 - 9 / 3 + 5 * 2, 11)
+test_eq(4 - 9 / 3 + 5 * 2, 11)
 # Also works
-assert_eq((4 - (9 / 3)) + (5 * 2), 11)
+test_eq((4 - (9 / 3)) + (5 * 2), 11)
 # Also works
-assert_eq(4 - (9 / 3) + 5 * 2, 11)
+test_eq(4 - (9 / 3) + 5 * 2, 11)
 # Should be -9
-assert_eq(4 - ((9 / 3) + 5 * 2), -9)
+test_eq(4 - ((9 / 3) + 5 * 2), -9)
 # Should be 0
-assert_eq(1+2*((4-5)*(4-5))-6/2, 0)
+test_eq(1+2*((4-5)*(4-5))-6/2, 0)
 # Should be -1
-assert_eq(-1*(2+3)/5, -1)
+test_eq(-1*(2+3)/5, -1)
+
+fun map_string(over: Str, f: Lam) -> Str {
+    for i in 0..length(over) {
+        v = over[i]
+        over[i] = f(v)
+    }
+    over
+}
+
+# Should be Ifmmp!Xpsme"
+test_eq(map_string("Hello World!", (c: Str) {
+    char_code = str_to_chars(c)[0]
+    char_to_str(char_code + 1)
+}), "Ifmmp!Xpsme\"")
+
 test_stats()
 
 fun fibonacii(n: Int) -> Int {
@@ -31,7 +46,7 @@ fun fibonacii(n: Int) -> Int {
 fun factorial(n: Int) -> Int {
     product = 1
     while n != 0 {
-        product *= n # Henklo
+        product *= n # This does the thing
         n -= 1
     }
     product

@@ -11,6 +11,7 @@ mod return_expression;
 mod break_expression;
 mod comment;
 mod for_expression;
+mod base_function_expression;
 
 pub use crate::{GetSpan, Span};
 
@@ -22,6 +23,7 @@ pub(super) mod prelude {
     pub use crate::node::break_expression::BreakExpression;
     pub use crate::node::expression_list::ExpressionList;
     pub use crate::node::function_expression::FunctionExpression;
+    pub use crate::node::base_function_expression::{BaseFunctionExpression, FunctionParameter, FunctionReturnType};
     pub use crate::node::if_expression::IfExpression;
     pub use crate::node::index_expression::IndexExpression;
     pub use crate::node::return_expression::ReturnExpression;
@@ -46,6 +48,7 @@ pub enum Node {
     ExpressionList(ExpressionList),
     IfExpression(IfExpression),
     FunctionExpression(FunctionExpression),
+    AnonymousFunctionExpression(BaseFunctionExpression),
     WhileExpression(WhileExpression),
     ForExpression(ForExpression),
     ReturnExpression(ReturnExpression),
@@ -70,6 +73,7 @@ impl GetSpan for Node {
             Node::ExpressionList(e) => e.get_span(),
             Node::IfExpression(e) => e.get_span(),
             Node::FunctionExpression(e) => e.get_span(),
+            Node::AnonymousFunctionExpression(e) => e.get_span(),
             Node::WhileExpression(e) => e.get_span(),
             Node::ForExpression(e) => e.get_span(),
             Node::ReturnExpression(e) => e.get_span(),
