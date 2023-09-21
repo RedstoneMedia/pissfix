@@ -20,7 +20,7 @@ fun map_string(over: Str, f: Lam) -> Str {
 }
 
 # Should be Ifmmp!Xpsme"
-test_eq(map_string("Hello World!", (c: Str) {
+test_eq(map_string("Hello World!", (c: Str) -> Str {
     char_code = str_to_chars(c)[0]
     char_to_str(char_code + 1)
 }), "Ifmmp!Xpsme\"")
@@ -30,6 +30,8 @@ test_stats()
 fun fibonacii(n: Int) -> Int {
     if n == 0 {
         0
+    } else if n == 1 {
+        1
     } else {
         last = 0
         current = 1

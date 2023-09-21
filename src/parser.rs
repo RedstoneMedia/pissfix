@@ -197,7 +197,13 @@ impl Parser {
             while self.peek_next(i).kind != TokenEnum::ClosingParentheses {
                 i += 1;
             }
-            if self.peek_next(i+1).kind == TokenEnum::OpeningBrace {
+            // Check for possible arrow
+            let mut next = self.peek_next(i+1);
+            if next.kind == TokenEnum::Arrow {
+                next = self.peek_next(i+3); // Skip arrow and Type
+            }
+            // If there is a '{' now then it's a anonymous function expression
+            if next.kind == TokenEnum::OpeningBrace {
                 let base = self.parse_base_function_definition(token, last_precedence, stop_token_check, error_tracker)?;
                 return Ok(Node::AnonymousFunctionExpression(base));
             }
@@ -224,13 +230,16 @@ impl Parser {
             // Make "{" the token that will be acquired when calling next in parse_sub_expression
             self.seperator_back_until(|t| t.kind == TokenEnum::OpeningBrace);
             // Parse true branch
-            let true_branch_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+            let mut true_branch_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+            true_branch_expression = make_wrapped_in_expression_list(true_branch_expression);
             // Check for else keyword
             let mut false_branch = None;
             let peeked_next = self.peek_next(0);
             if peeked_next.kind == TokenEnum::ElseKeyword {
                 self.next_token += 1; // Skip else keyword
-                false_branch = Some(Box::new(self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?)); // Parse false branch
+                let mut branch = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+                branch = make_wrapped_in_expression_list(branch);
+                false_branch = Some(Box::new(branch)); // Parse false branch
             }
             Ok(Node::IfExpression(IfExpression { keyword: token, condition: Box::new(condition_expression), true_branch: Box::new(true_branch_expression), false_branch }))
         } else if let TokenEnum::FunctionKeyword = token.kind {
@@ -548,5 +557,19 @@ impl Parser {
             &None,
             error_tracker
         )
+    }
+}
+
+/// Wraps a node in a Expression list, if it isn't already a Expression list
+fn make_wrapped_in_expression_list(node: Node) -> Node {
+    if let Node::ExpressionList(_) = node {
+        node
+    } else {
+        let span = node.get_span();
+        Node::ExpressionList(ExpressionList {
+            opening: Token { kind: TokenEnum::NoToken, span: span.clone() },
+            expressions: vec![node],
+            closing: Token { kind: TokenEnum::NoToken, span },
+        })
     }
 }
