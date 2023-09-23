@@ -132,8 +132,9 @@ impl CodeGenerator {
                     self.generate_code(current_expression, indent_level);
                     self.add_with_indent(" ", indent_level);
                     // Use set with simple index or path-set with array of indices for nested index expressions
+                    // We cannot use path-set for everything, as it only works on arrays while set also works on strings
                     let function_name = if value_path_expressions.len() == 1 {
-                        self.generate_code(&index_value, indent_level);
+                        self.generate_code(index_value, indent_level);
                         "set"
                     } else {
                         let path_array_expression_list = Node::ExpressionList(ExpressionList {
