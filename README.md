@@ -1,6 +1,6 @@
 # Pissfix 🚀
 
-Pissfix is a blazingly fast 🚀 programming language that transpiles to a "intersting" and not well known programming language called "Postfix".
+Pissfix is a blazingly fast 🚀 programming language that transpiles to a "interesting" and not well known programming language called "Postfix".
 Postfix is a stack-based language that uses reverse Polish notation to express arithmetic expressions.
 Pissfix allows you to write code in a more intuitive and readable way 💁‍♀️👌.
 
