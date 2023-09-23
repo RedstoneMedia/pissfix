@@ -35,7 +35,7 @@ impl Lexer {
         if self.next_char_index + next > self.chars.len() - 1 {
             return None
         }
-        Some(self.chars[self.next_char_index + next].clone())
+        Some(self.chars[self.next_char_index + next])
     }
 
     /// Returns the current char index
@@ -61,10 +61,8 @@ impl Lexer {
         let mut keyword_chars = keyword.chars();
         if current_char != keyword_chars.next().unwrap() { return false; }
 
-        let mut current_char_index = 0;
-        for keyword_char in keyword_chars {
-            if keyword_char != self.peek_next(current_char_index).unwrap() { return false; }
-            current_char_index += 1;
+        for (i, keyword_char) in keyword_chars.enumerate() {
+            if keyword_char != self.peek_next(i).unwrap() { return false; }
         };
 
         for _ in 0..keyword.len()-1 {
@@ -120,7 +118,7 @@ impl Lexer {
                 comment.push(current_char);
             }
             let full_comment_length = comment.len();
-            let comment = comment.replace("\n", "").replace("\r","");
+            let comment = comment.replace('\n', "").replace('\r',"");
             let comment_length = comment.len();
             let comment_token = Token {
                 kind: TokenEnum::Comment(comment),
@@ -149,7 +147,7 @@ impl Lexer {
                     if peeked_char == '.' && !found_dot {
                         found_dot = true
                     } else if peeked_char == '.' && found_dot {
-                        if number_string.chars().last().unwrap() == '.' {
+                        if number_string.ends_with('.') {
                             // We have a range
                             number_string.remove(number_string.len()-1);
                             self.next_char_index -= 1;

@@ -177,18 +177,14 @@ impl Parser {
 
         //println!("parse sub expr : {:?}", token);
         // TODO: Don't use this many else if lets
-        return if token.kind.is_literal() {
+        if token.kind.is_literal() {
             Ok(Node::LiteralExpression(token))
         } else if let TokenEnum::Identifier(_) = token.kind {
             // Check for function call
             let peeked_next = self.peek_next(0);
-
-            match peeked_next.kind {
-                TokenEnum::OpeningParentheses => {
-                    self.next_token += 1;
-                    return Ok(self.parse_function_call(token, last_precedence, error_tracker)?);
-                }
-                _ => {}
+            if peeked_next.kind == TokenEnum::OpeningParentheses {
+                self.next_token += 1;
+                return self.parse_function_call(token, last_precedence, error_tracker);
             }
             Ok(Node::IdentifierExpression(token))
         } else if let TokenEnum::OpeningParentheses = token.kind {
@@ -410,7 +406,7 @@ impl Parser {
         }
 
         // Check if operator is binary operator and create binary expression with sub expression and recursive parse expression.
-        return if operator.kind.is_binary_operator_token() {
+        if operator.kind.is_binary_operator_token() {
             // Check if already parsed sub expression is parenthesized so it can be ignored in the precedence checks below.
             let parenthesized = is_parenthesized(&sub_expression);
 

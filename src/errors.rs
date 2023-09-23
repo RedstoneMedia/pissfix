@@ -31,13 +31,13 @@ impl Error {
 
     pub fn get_error_text(&self, original_code : &str) -> String {
         if self.end_char > original_code.len()-1 {
-            return String::from(format!("[{:?}] Error: {}", self.kind, self.text));
+            return format!("[{:?}] Error: {}", self.kind, self.text);
         }
-        let start_line = original_code[..self.start_char].split("\n").collect::<Vec<&str>>().len();
-        let end_line = original_code[self.start_char..self.start_char+1].split("\n").collect::<Vec<&str>>().len() + start_line;
-        let line_start_char_index = &original_code.split("\n").collect::<Vec<&str>>()[..start_line-1].join("").len();
+        let start_line = original_code[..self.start_char].split('\n').collect::<Vec<&str>>().len();
+        let end_line = original_code[self.start_char..self.start_char+1].split('\n').collect::<Vec<&str>>().len() + start_line;
+        let line_start_char_index = &original_code.split('\n').collect::<Vec<&str>>()[..start_line-1].join("").len();
 
-        let relevant_lines : &[&str] = &original_code.split("\n").collect::<Vec<&str>>()[start_line-1..end_line-1];
+        let relevant_lines : &[&str] = &original_code.split('\n').collect::<Vec<&str>>()[start_line-1..end_line-1];
 
         let start_char_index_in_line = self.start_char - line_start_char_index - (start_line-1);
         let mut pointer_string = (0..start_char_index_in_line).map(|_| " ").collect::<String>();
@@ -50,12 +50,12 @@ impl Error {
             self.text.white().bold()
         );
 
-        String::from(format!(
+        format!(
             "{}\n{}\n{}",
             error_message.bright_red().bold(),
             relevant_lines.join("\n"),
             pointer_string.red()
-        ))
+        )
     }
 
 }

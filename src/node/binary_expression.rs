@@ -24,9 +24,9 @@ impl GetSpan for BinaryExpression {
 impl Debug for BinaryExpression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            write!(f, "{},\n{},\n{}", format!("{:#?}", self.left), format!("{:#?}", self.operation), format!("{:#?}", self.right))
+            write!(f, "{:#?},\n{:#?},\n{:#?}", self.left, self.operation, self.right)
         } else {
-            write!(f, "{} {} {}", format!("{:?}", self.left), format!("{:?}", self.operation), format!("{:?}", self.right))
+            write!(f, "{:?} {:?} {:?}", self.left, self.operation, self.right)
         }
 
     }

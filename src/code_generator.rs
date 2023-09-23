@@ -22,9 +22,9 @@ pub struct CodeGenerator {
 impl CodeGenerator {
     fn add_with_indent(&mut self, mut add: &str, mut indent_level: usize) {
         if add.is_empty() {return;}
-        if !self.code.ends_with("\n") {
+        if !self.code.ends_with('\n') {
             indent_level = 0;
-        } else if !self.code.ends_with(" ") {
+        } else if !self.code.ends_with(' ') {
             add = add.trim_start();
         }
         let indent_level = (indent_level as isize - 1).max(0) as usize;
@@ -34,7 +34,7 @@ impl CodeGenerator {
             .rev()
             .take_while(|c| c != &'\n')
             .count();
-        if current_line_length > MAX_LINE_LENGTH && !add.ends_with("\n") {
+        if current_line_length > MAX_LINE_LENGTH && !add.ends_with('\n') {
             self.code += "\n";
         }
     }
@@ -101,7 +101,7 @@ impl CodeGenerator {
                     TokenEnum::Number(number) => format!("{}", number),
                     TokenEnum::FloatLiteral(float) => format!("{}", float),
                     TokenEnum::BooleanLiteral(boolean) => format!("{}", boolean),
-                    TokenEnum::StringLiteral(string) => format!("\"{}\"", string.replace("\"", "\\\"")),
+                    TokenEnum::StringLiteral(string) => format!("\"{}\"", string.replace('"', "\\\"")),
                     _ => unreachable!()
                 };
                 self.add_with_indent(&literal, indent_level);
@@ -166,11 +166,11 @@ impl CodeGenerator {
                 let TokenEnum::Identifier(name_ident) = &name.kind else {unreachable!()};
                 let name_ident = replace_function_ident(name_ident);
                 self.add_with_indent(&format!(":{}", name_ident), indent_level);
-                self.generate_base_function_code(&base, indent_level);
+                self.generate_base_function_code(base, indent_level);
                 self.add_with_indent(" fun\n\n", indent_level);
             }
             Node::AnonymousFunctionExpression(base) => {
-                self.generate_base_function_code(&base, indent_level);
+                self.generate_base_function_code(base, indent_level);
                 self.add_with_indent(" lam\n", indent_level);
             }
             Node::WhileExpression(WhileExpression {condition, body , ..}) => {
@@ -202,7 +202,7 @@ impl CodeGenerator {
                 } else {
                     expressions.insert(0, Node::_Verbatim(" pop".to_string()));
                 }
-                self.generate_code(&iterate_over, indent_level);
+                self.generate_code(iterate_over, indent_level);
                 self.generate_code(&modified_body, indent_level);
                 self.add_with_indent(" for", indent_level);
             }
@@ -222,7 +222,7 @@ impl CodeGenerator {
                 self.add_with_indent(&format!(" #{}{}", comment_string, if on.is_some() {"\n"} else {""}), indent_level);
             },
             Node::_Verbatim(code) => {
-                self.add_with_indent(&code, indent_level);
+                self.add_with_indent(code, indent_level);
             }
         }
     }
@@ -231,8 +231,7 @@ impl CodeGenerator {
 
 fn replace_function_ident(ident_str: &str) -> String {
     let mut out = ident_str.replace(FUNCTION_REPLACEMENTS[0].0, FUNCTION_REPLACEMENTS[0].1);
-    for i in 1..FUNCTION_REPLACEMENTS.len() {
-        let (x, with) = FUNCTION_REPLACEMENTS[i];
+    for (x, with) in FUNCTION_REPLACEMENTS {
         out = out.replace(x, with);
     }
     out
