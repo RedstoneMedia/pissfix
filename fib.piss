@@ -28,6 +28,10 @@ test_eq(map("Hello World!", (c: Str) -> Str {
 test_eq(map([1, 1+1, 2+1, 2*2, 5, 6], (n: Int) -> Int {
     n * 2 + 1
 }), [3, 5, 7, 9, 11, 13])
+# Should set inner array value to 15
+nested = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+nested[2][1] = 15
+test_eq(nested[2][1], 15)
 
 test_stats()
 

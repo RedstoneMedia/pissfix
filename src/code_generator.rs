@@ -121,15 +121,37 @@ impl CodeGenerator {
             Node::ParenthesizedExpression(node) => self.generate_code(node, indent_level),
             Node::AssignmentExpression(AssignmentExpression {to, value, ..}) => {
                 if let Node::IndexExpression(IndexExpression {index_value, index_into, ..}) = &**to {
-                    // This is required as a normally generating the code for a index expression would use the get function, but we need set here
-                    // TODO: Does not work for nested arrays eg: a[0][1] = 2. Maybe do something at parse level
-                    self.generate_code(index_into, indent_level);
+                    // This is required as a normally generating the code for a index expression would modify a copy of the gotten value, which is unwanted and might be invalid
+                    let mut value_path_expressions = vec![index_value];
+                    let mut current_expression = index_into;
+                    while let Node::IndexExpression(IndexExpression { index_value: inner_index_value, index_into: inner_index_into, ..}) = current_expression.as_ref() {
+                        value_path_expressions.push(inner_index_value);
+                        current_expression = inner_index_into;
+                    }
+                    if let Node::IdentifierExpression(_) = current_expression.as_ref() {} else { panic!("First index into always has to be a identifier expression") }
+                    self.generate_code(current_expression, indent_level);
                     self.add_with_indent(" ", indent_level);
-                    self.generate_code(index_value, indent_level);
+                    // Use set with simple index or path-set with array of indices for nested index expressions
+                    let function_name = if value_path_expressions.len() == 1 {
+                        self.generate_code(&index_value, indent_level);
+                        "set"
+                    } else {
+                        let path_array_expression_list = Node::ExpressionList(ExpressionList {
+                            opening: Token { kind: TokenEnum::OpeningBracket, span: Default::default() },
+                            expressions: value_path_expressions
+                                .into_iter()
+                                .rev() // Important as the AST starts from the outer most indexing expression, which is the last one
+                                .map(|n| n.as_ref().clone())
+                                .collect(),
+                            closing: Token { kind: TokenEnum::ClosingBracket, span: Default::default() },
+                        });
+                        self.generate_code(&path_array_expression_list, indent_level);
+                        "path-set"
+                    };
                     self.add_with_indent(" ", indent_level);
                     self.generate_code(value, indent_level);
-                    self.add_with_indent(" set ", indent_level);
-                    self.generate_code(index_into, indent_level);
+                    self.add_with_indent(&format!(" {} ", function_name), indent_level);
+                    self.generate_code(current_expression, indent_level);
                 } else {
                     self.generate_code(value, indent_level);
                     self.add_with_indent(" ", indent_level);
