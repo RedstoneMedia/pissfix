@@ -9,10 +9,10 @@ The transpilation time on a medium sized program just takes a few microseconds �
 Pissfix is an amazing language ✨ with tons of upsides, such as:
 
 - Easy to learn and use 🧾🔠
-- Compatible with any platform that supports Postfix ✅
+- Compatible with any platform that supports Postfix 💻🌎✅
 - Supports functions, anonymous functions, variables, loops, and conditional statements 💭
 - Has a rich set of built-in operators and functions 💰🅱
-- Allows comments that carry over to postfix 🆗
+- Allows comments that carry over to postfix 💬➡️📝
 
 ## Example
 
