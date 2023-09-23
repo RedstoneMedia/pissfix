@@ -63,4 +63,4 @@ Pissfix is an open source project and welcomes contributions from anyone who is 
 
 ## License
 
-Pissfix is licensed under the GNU GPL 3 License.
+Pissfix is licensed under the GNU GPL v3.0 License.
