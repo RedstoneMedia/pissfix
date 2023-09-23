@@ -137,17 +137,21 @@ impl CodeGenerator {
                 }
                 self.add_with_indent("!", indent_level);
             },
-            Node::ExpressionList(ExpressionList {expressions, ..}) => {
-                if indent_level > 0 {
-                    self.add_with_indent("{\n", indent_level);
-                }
+            Node::ExpressionList(ExpressionList {expressions, opening, ..}) => {
+                let (start, end) = match opening.kind {
+                    TokenEnum::OpeningBrace => ("{\n", "}"),
+                    TokenEnum::OpeningBracket => ("[\n", "]"),
+                    TokenEnum::OpeningParentheses => ("(\n", ")"),
+                    TokenEnum::NoToken => ("", ""),
+                    _ => unreachable!()
+                };
+
+                self.add_with_indent(start, indent_level);
                 for expression in expressions {
                     self.generate_code(expression, indent_level + 1);
                     self.add_with_indent("\n", indent_level);
                 }
-                if indent_level > 0 {
-                    self.add_with_indent("}", indent_level);
-                }
+                self.add_with_indent(end, indent_level);
             }
             Node::IfExpression(IfExpression {condition, true_branch, false_branch, .. }) => {
                 self.generate_code(condition, indent_level);

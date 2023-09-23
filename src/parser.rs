@@ -220,10 +220,21 @@ impl Parser {
                 self.next_token += 1;
             }
             // Parse true branch until "}"
-            let expression_list = self.parse_expression_list_until(token, &Some(|t| t == TokenEnum::ClosingBrace), error_tracker);
+            let expression_list = self.parse_expression_list_until(
+                token,
+                &Some(|t| t == TokenEnum::ClosingBrace),
+                &|t| t == TokenEnum::Separator,
+                error_tracker
+            );
             Ok(expression_list)
         } else if let TokenEnum::OpeningBracket = token.kind {
-            unimplemented!("Array literals are not defined")
+            let expression_list = self.parse_expression_list_until(
+                token,
+                &Some(|t| t == TokenEnum::ClosingBracket),
+                &|t| t == TokenEnum::Comma || t == TokenEnum::ClosingBracket,
+                error_tracker
+            );
+            Ok(expression_list)
         } else if let TokenEnum::IfKeyword = token.kind {
             // Parse condition
             let condition_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
@@ -435,14 +446,7 @@ impl Parser {
     /// Returns empty expression list when not parsing anything
     fn parse_expression_until(&mut self, last_precedence : u8, stop_token_check : StopTokenCheck, error_tracker : &mut ErrorTracker) -> Result<Node, Error> {
         let current_token = self.peek_next(0);
-        if current_token.kind == TokenEnum::EndOfFile {
-            return Err(Error::from_span(
-                current_token.span,
-                "Unexpected end of file".to_string(),
-                ErrorKind::ParsingError
-            ))
-        }
-        if stop_token_check(current_token.kind) {
+        if stop_token_check(current_token.kind.clone()) {
             self.next_token += 1;
             // Return empty expression list on immediate end
             return Ok(Node::ExpressionList(ExpressionList {
@@ -451,20 +455,27 @@ impl Parser {
                 closing: Token { kind: TokenEnum::NoToken, span: Default::default() },
             }));
         };
+        if current_token.kind == TokenEnum::EndOfFile {
+            return Err(Error::from_span(
+                current_token.span,
+                "Unexpected end of file".to_string(),
+                ErrorKind::ParsingError
+            ))
+        }
 
         // Parse expression until stop (and call parse_expression_with_sub_expression to handle precedences correctly)
         let (mut expression, mut did_early_exit) = self.parse_expression(last_precedence, &Some(stop_token_check), error_tracker)?;
         loop {
             let token_kind = &self.tokens[self.next_token - 1].kind;
+            if !did_early_exit && stop_token_check(token_kind.clone()) {
+                break;
+            }
             if token_kind == &TokenEnum::EndOfFile {
                 return Err(Error::from_span(
                     current_token.span,
                     "Unexpected end of file".to_string(),
                     ErrorKind::ParsingError
                 ))
-            }
-            if !did_early_exit && stop_token_check(token_kind.clone()) {
-                break;
             }
             (expression, did_early_exit) = self.parse_expression_with_sub_expression(expression, last_precedence, did_early_exit, &Some(stop_token_check.clone()), error_tracker)?;
         }
@@ -493,8 +504,9 @@ impl Parser {
         Ok(result)
     }
 
-    /// This function parses every line until either reaching the end of the token stream or a stop token if supplied with one.
-    fn parse_expression_list_until<F: Fn(TokenEnum) -> bool>(&mut self, opening_token: Token, stop_token_check : &Option<F>, error_tracker : &mut ErrorTracker) -> Node {
+    /// This function creates a expression list where each expression in the list is separated by the `separator_token_check`.
+    /// Parses every expression until either reaching the end of the token stream or a stop token if supplied with one.
+    fn parse_expression_list_until<ST: Fn(TokenEnum) -> bool, SE: Fn(TokenEnum) -> bool>(&mut self, opening_token: Token, stop_token_check : &Option<ST>, separator_token_check: &SE, error_tracker : &mut ErrorTracker) -> Node {
         // Check for stop token first to make empty expression lists possible
         if stop_token_check.is_some() {
             let start_token = self.next_token;
@@ -513,8 +525,12 @@ impl Parser {
         }
 
         let mut expressions = vec![];
-        let parsed_result = self.parse_expression_until_line_end(&stop_token_check.as_ref().map(|f| f as StopTokenCheck), error_tracker);
+        let separator_check_fn = separator_token_check as StopTokenCheck;
+        let parsed_result = self.parse_expression_until(0, separator_check_fn, error_tracker);
         match parsed_result {
+            Ok(Node::ExpressionList(ExpressionList {opening: Token {kind: TokenEnum::NoToken, ..}, expressions, ..})) => {
+                assert!(expressions.is_empty());
+            },
             Ok(parsed) => expressions.push(parsed),
             Err(err) => error_tracker.add_error(err)
         }
@@ -537,8 +553,11 @@ impl Parser {
             if check_token.kind == TokenEnum::EndOfFile {
                 break check_token.clone();
             } else {
-                let parsed_result = self.parse_expression_until_line_end(&stop_token_check.as_ref().map(|f| f as StopTokenCheck), error_tracker);
+                let parsed_result = self.parse_expression_until(0, separator_check_fn, error_tracker);
                 match parsed_result {
+                    Ok(Node::ExpressionList(ExpressionList {opening: Token {kind: TokenEnum::NoToken, ..}, expressions, ..})) => {
+                        assert!(expressions.is_empty())
+                    },
                     Ok(parsed) => expressions.push(parsed),
                     Err(err) => error_tracker.add_error(err)
                 }
@@ -552,9 +571,10 @@ impl Parser {
     }
 
     pub fn parse_all(&mut self, error_tracker : &mut ErrorTracker) -> Node {
-        self.parse_expression_list_until::<fn(TokenEnum) -> bool>(
+        self.parse_expression_list_until::<fn(TokenEnum) -> bool, _>(
             Token  { kind: TokenEnum::NoToken, span: Span { start_char: 0, end_char: 0 } },
             &None,
+             &|t| t == TokenEnum::Separator || t == TokenEnum::EndOfFile,
             error_tracker
         )
     }
