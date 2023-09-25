@@ -82,7 +82,7 @@ impl TypeChecker {
                     _ => {}
                 }
             },
-            v => eprintln!("Warning : Cannot assign to expression : {:?}", v)
+            v => eprintln!("Warning: Cannot assign to expression: {:?}", v)
         }
     }
 
@@ -153,7 +153,7 @@ impl TypeChecker {
                     None => {
                         error_tracker.add_error(Error::from_span(
                             identifier_expr.get_span(),
-                            format!("Variable : {} does not exits in scope", identifier_string),
+                            format!("Variable: {} does not exits in scope", identifier_string),
                             ErrorKind::TypeCheckError
                         ));
                         Type::_Unknown

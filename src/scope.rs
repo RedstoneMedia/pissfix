@@ -181,6 +181,7 @@ impl AllScopes {
 
     /// This function does the same thing as find_variable_scope_id_in_scope_by_name, but searches for a function and not variable.
     pub fn find_function_scope_id_in_scope_by_name(&self, scope_id : u64, function_name: &String) -> Option<u64> {
+        // TODO: This does not seem to be working
         // Try to find function value going up from the current scope
         let mut current_scope_id = Some(scope_id);
         let mut found_function = false;
