@@ -41,6 +41,7 @@ impl Type {
 
 
     pub(crate) fn expect_type(actual: &Type, expected: &Type) -> bool {
+        // TODO: Better to implement PartialEq manually than this
         if actual == expected || actual == &Type::_Unknown || expected == &Type::_Unknown {return true};
         let mut types_actual = Vec::new();
         if let Type::Union(subtypes) = actual {

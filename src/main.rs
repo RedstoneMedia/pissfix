@@ -50,12 +50,13 @@ fn main() {
     if args.print_ast {
         println!("{:#?}\n\n\n", root);
     }
+    /*
     let mut type_checker = TypeChecker::default();
     type_checker.check_types(&root, &mut error_tracker);
     if error_tracker.has_errors() {
         eprintln!("{}", error_tracker.get_errors_text(&code));
         return;
-    }
+    }*/
     let mut code_generator = CodeGenerator::default();
     code_generator.generate_code(&root, 0);
     let output_code = code_generator.code.trim_start().trim_end();

@@ -131,6 +131,10 @@ impl TypeChecker {
                 function_return_type
             },
             None => {
+                for expr in &call_expr.arguments {
+                    self.check_types_recursive(expr, current_scope_id, error_tracker);
+                }
+
                 /*
                 TODO: Make standard library functions work
                 error_tracker.add_error(Error::from_span(
