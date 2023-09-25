@@ -62,7 +62,6 @@ fun factorial(n: Int) -> Int {
     product
 }
 
-read_int()
-fact = factorial()
+fact = factorial(read_int())
 println("Input: " + str(fact))
-println("Output: " + str(fibonacii(fact)))
+println("Output: " + str(fibonacii(fact, "")))

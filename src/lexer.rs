@@ -151,6 +151,7 @@ impl Lexer {
                             // We have a range
                             number_string.remove(number_string.len()-1);
                             self.next_char_index -= 1;
+                            found_dot = false;
                             break;
                         }
                         error_tracker.add_error(Error {

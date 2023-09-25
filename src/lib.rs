@@ -4,6 +4,8 @@ pub mod parser;
 pub mod code_generator;
 pub mod errors;
 mod node;
+pub mod type_checker;
+mod scope;
 
 #[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub struct Span {

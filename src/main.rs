@@ -3,6 +3,7 @@ use clap::Parser;
 use clap_derive::Parser;
 use pissfix::code_generator::CodeGenerator;
 use pissfix::errors::ErrorTracker;
+use pissfix::type_checker::TypeChecker;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -48,6 +49,12 @@ fn main() {
     }
     if args.print_ast {
         println!("{:#?}\n\n\n", root);
+    }
+    let mut type_checker = TypeChecker::default();
+    type_checker.check_types(&root, &mut error_tracker);
+    if error_tracker.has_errors() {
+        eprintln!("{}", error_tracker.get_errors_text(&code));
+        return;
     }
     let mut code_generator = CodeGenerator::default();
     code_generator.generate_code(&root, 0);
