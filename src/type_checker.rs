@@ -1,5 +1,5 @@
 use crate::errors::{Error, ErrorKind, ErrorTracker};
-use crate::GetSpan;
+use crate::{GetSpan, Span};
 use crate::node::Node;
 use crate::node::prelude::*;
 use crate::scope::{AllScopes, Function, Scope, Type};
@@ -16,50 +16,74 @@ impl TypeChecker {
         let TokenEnum::Identifier(function_name) = &function_expr.name.kind else {unreachable!()};
         // If function is already defined in current scope don't re define it.
         if self.all_scopes.get(&current_scope_id).functions.get(function_name).is_some() {
+            // TODO: Throw error instead of ignoring
             return;
         }
 
+        let function = self.half_check_base_function_expression(&function_expr.base, current_scope_id, error_tracker);
+        let function_scope_id = function.scope_id;
+        self.all_scopes.get_mut(&current_scope_id).functions.insert(function_name.clone(), function);
+
+        // Check out function return type
+        let mut actual_return_type = self.check_types_recursive(&function_expr.base.body, function_scope_id, error_tracker);
+        let function = self.all_scopes.get_mut(&current_scope_id).functions.get_mut(function_name).unwrap();
+        if !actual_return_type.expect_to_be(&function.returns) {
+            error_tracker.add_error(Error::from_span(
+                function_expr.base.return_type.as_ref()
+                         .map(|return_type|return_type.return_type.get_span())
+                         .unwrap_or(function_expr.name.get_span()),
+                format!("Function returns type: {:?}, but actually has type: {:?}", function.returns, actual_return_type),
+                ErrorKind::TypeCheckError
+            ));
+            return;
+        }
+        function.returns = actual_return_type;
+    }
+
+    fn half_check_base_function_expression(&mut self, base_function_exp: &BaseFunctionExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Function {
         // TODO: Create actual error when try_from fails
-        let parameters : Vec<_> = function_expr.base.parameters.iter().map(|FunctionParameter { name, parameter_type, .. }| {
+        let parameters : Vec<_> = base_function_exp.parameters.iter().map(|FunctionParameter { name, parameter_type, .. }| {
             let TokenEnum::Identifier(name) = &name.kind else {unreachable!()};
             let t = Type::try_from(parameter_type).unwrap();
             (name.clone(), t)
         }).collect();
 
         // TODO: Create actual error when try_from fails
-        let return_type = function_expr.base.return_type.as_ref()
+        let return_type = base_function_exp.return_type.as_ref()
             .map(|return_type| Type::try_from(&return_type.return_type).unwrap())
             .unwrap_or(Type::_None);
 
-        self.all_scopes.get_mut(&current_scope_id).functions.insert(function_name.clone(), Function {
-            parameters: parameters.clone(),
-            returns: return_type.clone(),
-            scope_id: Default::default(),
-        });
         let mut function_scope = Scope::new(Some(current_scope_id));
         // Add function input arguments to function scope.
-        for (param_name, param_type) in parameters {
-            function_scope.variables.insert(param_name, param_type);
+        for (param_name, param_type) in parameters.iter() {
+            function_scope.variables.insert(param_name.clone(), param_type.clone());
         }
         let new_scope_id = self.all_scopes.insert(function_scope);
+        Function {
+            parameters,
+            returns: return_type,
+            scope_id: new_scope_id,
+        }
+    }
 
+    fn check_base_function_expression(&mut self, base_function_exp: &BaseFunctionExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Function {
+        let mut function = self.half_check_base_function_expression(base_function_exp, current_scope_id, error_tracker);
         // Check out function return type
-        let mut actual_return_type = self.check_types_recursive(&function_expr.base.body, new_scope_id, error_tracker);
-        if !actual_return_type.expect_to_be(&return_type) {
+        let mut actual_return_type = self.check_types_recursive(&base_function_exp.body, function.scope_id, error_tracker);
+        if !actual_return_type.expect_to_be(&function.returns) {
             error_tracker.add_error(Error::from_span(
-                function_expr.base.return_type.as_ref()
-                         .map(|return_type|return_type.return_type.get_span())
-                         .unwrap_or(function_expr.name.get_span()),
-                format!("Function returns type: {:?}, but actually has type: {:?}", return_type, actual_return_type),
+                base_function_exp.return_type.as_ref()
+                    .map(|return_type|return_type.return_type.get_span())
+                    .unwrap_or(Span {
+                        start_char: base_function_exp.opening_parenthesis.span.start_char,
+                        end_char: base_function_exp.opening_parenthesis.span.end_char
+                    }),
+                format!("Function returns type: {:?}, but actually has type: {:?}", function.returns, actual_return_type),
                 ErrorKind::TypeCheckError
             ));
-            return;
         }
-
-        let function = self.all_scopes.get_mut(&current_scope_id).functions.get_mut(function_name).unwrap();
-        // Set new scope id so the scope can be copied when the function is called
-        function.scope_id = new_scope_id;
         function.returns = actual_return_type;
+        function
     }
 
     fn check_assignment_expression(&mut self, assignment_expr: &AssignmentExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) {
@@ -281,7 +305,7 @@ impl TypeChecker {
                 let mut return_types = Vec::with_capacity(expressions.len());
                 for expr in expressions {
                     let t = self.check_types_recursive(expr, current_scope_id, error_tracker);
-                    if let Type::_None = t {
+                    if let Type::_None = t {} else {
                         return_types.push(t);
                     }
                 }
@@ -310,7 +334,9 @@ impl TypeChecker {
             Node::FunctionExpression(function_expression) => {
                 self.check_function_expression(function_expression, current_scope_id, error_tracker);
             },
-            Node::AnonymousFunctionExpression(_) => {}
+            Node::AnonymousFunctionExpression(base_function_expression) => {
+                return Type::Lambda(Box::new(self.check_base_function_expression(base_function_expression, current_scope_id, error_tracker)))
+            }
             Node::WhileExpression(WhileExpression { condition, body, .. }) => {
                 let mut condition_type = self.check_types_recursive(condition, current_scope_id, error_tracker);
                 if !condition_type.expect_to_be(&Type::Boolean) {
@@ -352,6 +378,7 @@ impl TypeChecker {
             Node::BreakExpression(_) => {}
             Node::IndexExpression(_) => {
                 // TODO: Implement
+                return Type::_Unknown
             }
             Node::CommentExpression(CommentExpression { on , .. }) => {
                 if let Some(on) = on {
