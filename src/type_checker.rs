@@ -27,6 +27,7 @@ impl TypeChecker {
         // Check out function return type
         let mut actual_return_type = self.check_types_recursive(&function_expr.base.body, function_scope_id, error_tracker);
         let function = self.all_scopes.get_mut(&current_scope_id).functions.get_mut(function_name).unwrap();
+        // TODO: expect_to_be is not correct here, as it narrows down the type of unions (Which is not valid here). A fn that specifies -> Int but actually returns Union(Int, String) should not be valid
         if !actual_return_type.expect_to_be(&function.returns) {
             error_tracker.add_error(Error::from_span(
                 function_expr.base.return_type.as_ref()
@@ -70,6 +71,7 @@ impl TypeChecker {
         let mut function = self.half_check_base_function_expression(base_function_exp, current_scope_id, error_tracker);
         // Check out function return type
         let mut actual_return_type = self.check_types_recursive(&base_function_exp.body, function.scope_id, error_tracker);
+        // TODO: expect_to_be is not correct here
         if !actual_return_type.expect_to_be(&function.returns) {
             error_tracker.add_error(Error::from_span(
                 base_function_exp.return_type.as_ref()
