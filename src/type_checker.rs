@@ -44,8 +44,8 @@ impl TypeChecker {
         let new_scope_id = self.all_scopes.insert(function_scope);
 
         // Check out function return type
-        let actual_return_type = self.check_types_recursive(&function_expr.base.body, new_scope_id, error_tracker);
-        if actual_return_type != return_type {
+        let mut actual_return_type = self.check_types_recursive(&function_expr.base.body, new_scope_id, error_tracker);
+        if !actual_return_type.expect_to_be(&return_type) {
             error_tracker.add_error(Error::from_span(
                 function_expr.base.return_type.as_ref()
                          .map(|return_type|return_type.return_type.get_span())
@@ -59,6 +59,7 @@ impl TypeChecker {
         let function = self.all_scopes.get_mut(&current_scope_id).functions.get_mut(function_name).unwrap();
         // Set new scope id so the scope can be copied when the function is called
         function.scope_id = new_scope_id;
+        function.returns = actual_return_type;
     }
 
     fn check_assignment_expression(&mut self, assignment_expr: &AssignmentExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) {
@@ -70,14 +71,15 @@ impl TypeChecker {
                 let TokenEnum::Identifier(identifier_string) = &ident_token.kind else {unreachable!()};
                 let insert_scope_variables = &mut self.all_scopes.get_mut(&current_scope_id).variables;
                 match insert_scope_variables.insert(identifier_string.clone(), expr_type.clone()) {
-                    Some(t) => {
-                        if t != expr_type && t != Type::_Unknown && expr_type != Type::_Unknown {
+                    Some(mut t) => {
+                        if !t.expect_to_be(&expr_type) {
                             error_tracker.add_error(Error::from_span(
                                 assignment_expr.get_span(),
                                 format!("Cannot assign {:?} to variable of type {:?}", expr_type, t),
                                 ErrorKind::TypeCheckError
                             ));
                         }
+                        *insert_scope_variables.get_mut(identifier_string).unwrap() = t;
                     },
                     _ => {}
                 }
@@ -118,8 +120,8 @@ impl TypeChecker {
 
                 let function_parameters = function.parameters.clone();
                 for ((_, expected), expr) in function_parameters.iter().zip(call_expr.arguments.iter()) {
-                    let actual = self.check_types_recursive(expr, current_scope_id, error_tracker);
-                    if &actual != expected {
+                    let mut actual = self.check_types_recursive(expr, current_scope_id, error_tracker);
+                    if !actual.expect_to_be(expected) {
                         error_tracker.add_error(Error::from_span(
                             call_expr.get_span(),
                             format!("Function argument type does not match, expected: {:?}, but got: {:?}", expected, actual),
@@ -179,12 +181,12 @@ impl TypeChecker {
     }
 
     fn check_binary_expression(&mut self, binary_expr: &BinaryExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Type {
-        let left_type = self.check_types_recursive(&binary_expr.left, current_scope_id, error_tracker);
-        let right_type = self.check_types_recursive(&binary_expr.right, current_scope_id, error_tracker);
+        let mut left_type = self.check_types_recursive(&binary_expr.left, current_scope_id, error_tracker);
+        let mut right_type = self.check_types_recursive(&binary_expr.right, current_scope_id, error_tracker);
 
         match &binary_expr.operation.kind {
             TokenEnum::Range(_) => {
-                if (left_type != Type::Integer && left_type != Type::_Unknown) || (right_type != Type::Integer && right_type != Type::_Unknown) {
+                if !left_type.expect_to_be(&Type::Integer) {
                     error_tracker.add_error(Error::from_span(
                         binary_expr.get_span(),
                         format!("Found non integer types for range: {:?} and {:?}", left_type, right_type),
@@ -201,11 +203,11 @@ impl TypeChecker {
                         format!("Incompatible types for boolean math: {:?} and {:?} ", left_type, right_type),
                         ErrorKind::TypeCheckError
                     ));
-                    return Type::Union(vec![left_type, right_type]);
+                    return Type::union_from(left_type, right_type);
                 }
             },
             TokenEnum::DoubleEquals | TokenEnum::NotEquals => {
-                if left_type != right_type {
+                if !left_type.expect_to_be(&right_type) {
                     error_tracker.add_error(Error::from_span(
                         binary_expr.get_span(),
                         format!("Comparison types have different types: {:?} and {:?} ", left_type, right_type),
@@ -214,19 +216,39 @@ impl TypeChecker {
                 }
                 Type::Boolean
             }
-            TokenEnum::Plus | TokenEnum::Minus | TokenEnum::Multiply | TokenEnum::Divide => match (&left_type, &right_type) {
-                (Type::Float, Type::Float) => Type::Float,
-                (Type::Integer, Type::Integer) => Type::Integer,
-                (Type::Boolean, Type::Boolean) => Type::Boolean,
-                (Type::String, Type::String) => Type::String,
-                (_, _) => {
+            TokenEnum::Plus | TokenEnum::Minus | TokenEnum::Multiply | TokenEnum::Divide => {
+                // Check if left hand is Float, Integer or String
+                if !left_type.expect_to_be(&Type::Union(vec![
+                    Type::Float, Type::Integer, Type::String
+                ])) {
+                    error_tracker.add_error(Error::from_span(
+                        binary_expr.left.get_span(),
+                        format!("Incompatible left hand type: {:?}", left_type),
+                        ErrorKind::TypeCheckError
+                    ));
+                    return Type::union_from(left_type, right_type);
+                }
+                // Same but for right hand
+                if !right_type.expect_to_be(&Type::Union(vec![
+                    Type::Float, Type::Integer, Type::String
+                ])) {
+                    error_tracker.add_error(Error::from_span(
+                        binary_expr.left.get_span(),
+                        format!("Incompatible right hand type: {:?}", left_type),
+                        ErrorKind::TypeCheckError
+                    ));
+                    return Type::union_from(left_type, right_type);
+                }
+                // Check for equality of left and right hand types
+                if !left_type.expect_to_be(&right_type) {
                     error_tracker.add_error(Error::from_span(
                         binary_expr.get_span(),
                         format!("Incompatible types: {:?} and {:?} ", left_type, right_type),
                         ErrorKind::TypeCheckError
                     ));
-                    return Type::Union(vec![left_type, right_type]);
+                    return Type::union_from(left_type, right_type);
                 }
+                left_type
             },
             _ => unreachable!()
         }
@@ -259,7 +281,7 @@ impl TypeChecker {
                 let mut return_types = Vec::with_capacity(expressions.len());
                 for expr in expressions {
                     let t = self.check_types_recursive(expr, current_scope_id, error_tracker);
-                    if t != Type::_None {
+                    if let Type::_None = t {
                         return_types.push(t);
                     }
                 }
@@ -270,8 +292,8 @@ impl TypeChecker {
                 }
             }
             Node::IfExpression(IfExpression { condition, true_branch, false_branch, .. }) => {
-                let condition_type = self.check_types_recursive(condition, current_scope_id, error_tracker);
-                if condition_type != Type::Boolean {
+                let mut condition_type = self.check_types_recursive(condition, current_scope_id, error_tracker);
+                if !condition_type.expect_to_be(&Type::Boolean) {
                     error_tracker.add_error(Error::from_span(
                         condition.get_span(),
                         format!("If condition has to be of type Boolean, but got: {:?}", condition_type),
@@ -290,8 +312,8 @@ impl TypeChecker {
             },
             Node::AnonymousFunctionExpression(_) => {}
             Node::WhileExpression(WhileExpression { condition, body, .. }) => {
-                let condition_type = self.check_types_recursive(condition, current_scope_id, error_tracker);
-                if condition_type != Type::Boolean {
+                let mut condition_type = self.check_types_recursive(condition, current_scope_id, error_tracker);
+                if !condition_type.expect_to_be(&Type::Boolean) {
                     error_tracker.add_error(Error::from_span(
                         condition.get_span(),
                         format!("While condition has to be of type Boolean, but got: {:?}", condition_type),
@@ -310,8 +332,8 @@ impl TypeChecker {
                         ));
                     }
                 }
-                let iterate_over_type = self.check_types_recursive(iterate_over, current_scope_id, error_tracker);
-                if !Type::expect_type(&iterate_over_type, &Type::Union(vec![
+                let mut iterate_over_type = self.check_types_recursive(iterate_over, current_scope_id, error_tracker);
+                if !iterate_over_type.expect_to_be(&Type::Union(vec![
                     Type::String,
                     Type::Range,
                     Type::Object,

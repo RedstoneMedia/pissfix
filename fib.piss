@@ -64,4 +64,4 @@ fun factorial(n: Int) -> Int {
 
 fact = factorial(read_int())
 println("Input: " + str(fact))
-println("Output: " + str(fibonacii(fact, "")))
+println("Output: " + str(fibonacii(fact)))

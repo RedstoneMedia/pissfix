@@ -4,7 +4,7 @@ use crate::GetSpan;
 use crate::node::Node;
 use crate::token::{Token, TokenEnum};
 
-#[derive(Debug, Clone, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub(crate) enum Type {
     Integer,
     Float,
@@ -23,8 +23,8 @@ pub(crate) enum Type {
 
 impl Type {
 
-    pub(crate) fn union_from(a: Type, b: Type) -> Type {
-        if a == b {return a}
+    pub(crate) fn union_from(mut a: Type, b: Type) -> Type {
+        if a.expect_to_be(&b) {return a} // Can we do this?
         let mut types = Vec::new();
         if let Type::Union(mut subtypes) = a {
             types.append(&mut subtypes);
@@ -40,31 +40,71 @@ impl Type {
     }
 
 
-    pub(crate) fn expect_type(actual: &Type, expected: &Type) -> bool {
-        // TODO: Better to implement PartialEq manually than this
-        if actual == expected || actual == &Type::_Unknown || expected == &Type::_Unknown {return true};
-        let mut types_actual = Vec::new();
-        if let Type::Union(subtypes) = actual {
-            types_actual.extend(subtypes.iter());
-        } else {
-            types_actual.push(actual)
-        }
-        let mut types_expected = Vec::new();
-        if let Type::Union(subtypes) = expected {
-            types_expected.extend(subtypes.iter());
-        } else {
-            types_expected.push(expected)
+    pub(crate) fn expect_to_be(&mut self, expected: &Type) -> bool {
+        if let Type::_Unknown | Type::Object = &self {
+            *self = expected.clone();
+            return true
         }
 
-        let mut does_overlap = false;
-        for t in types_actual {
-            if types_expected.contains(&t) {
-                does_overlap = true;
-                break;
+        match (expected, self) {
+            (Type::_Unknown | Type::Object, _) => true,
+            (Type::Integer, Type::Integer) => true,
+            (Type::Float, Type::Float) => true,
+            (Type::String, Type::String) => true,
+            (Type::Boolean, Type::Boolean) => true,
+            (Type::Range, Type::Range) => true,
+            (Type::_None, Type::_None) => true,
+            (Type::Lambda(expected_fun),  Type::Lambda(actual_fun)) => {
+                // TODO: Implement
+                true
+            },
+            (Type::Tuple(expected_types), Type::Tuple(actual_types)) => {
+                for (sub_expected, sub_actual) in expected_types.iter().zip(actual_types) {
+                    if !sub_actual.expect_to_be(sub_expected) {
+                        return false;
+                    }
+                }
+                true
             }
-        }
+            (Type::Tuple(expected_types), actual) => {
+                if expected_types.len() == 1 {
+                    actual.expect_to_be(&expected_types[0])
+                } else {
+                    false
+                }
+            }
+            (Type::Array(inner_expected), Type::Array(inner_actual)) => {
+                inner_actual.expect_to_be(inner_expected)
+            }
+            (expected, actual@Type::Union(_)) => {
+                let mut types_expected = Vec::new();
+                if let Type::Union(subtypes) = expected {
+                    types_expected.extend(subtypes.iter());
+                } else {
+                    types_expected.push(expected)
+                }
 
-        return does_overlap
+                let Type::Union(types_actual) = actual else {unreachable!()};
+
+                types_actual.retain_mut(|sub_actual| {
+                    types_expected
+                        .iter()
+                        .any(|sub_expected| sub_actual.expect_to_be(sub_expected))
+                });
+                let does_overlap = !types_actual.is_empty(); // No overlapping types -> Types don't match
+                if types_actual.len() == 1 { // Coerce union of only one type to inner type
+                    *actual = types_actual.pop().unwrap();
+
+                }
+                does_overlap
+            },
+            (Type::Union(types_expected), actual) => {
+                types_expected
+                    .iter()
+                    .any(|sub_expected| actual.expect_to_be(sub_expected))
+            },
+            (_, _) => false
+        }
     }
 
 }
@@ -117,14 +157,14 @@ impl TryFrom<&Node> for Type {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub(crate)struct Function {
     pub parameters: Vec<(String, Type)>,
     pub returns: Type,
     pub scope_id: u64,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Scope {
     pub functions: HashMap<String, Function>,
     pub variables: HashMap<String, Type>,
@@ -168,7 +208,6 @@ impl AllScopes {
         let mut current_scope_id = Some(scope_id);
         let mut found_variable = false;
         while current_scope_id.is_some() {
-            if current_scope_id.unwrap() == 0 {break;}
             let scope = self.get(&current_scope_id.unwrap());
             let parent_scope_id = scope.parent_scope;
             if scope.variables.contains_key(variable_name) {
@@ -182,12 +221,10 @@ impl AllScopes {
 
     /// This function does the same thing as find_variable_scope_id_in_scope_by_name, but searches for a function and not variable.
     pub fn find_function_scope_id_in_scope_by_name(&self, scope_id : u64, function_name: &String) -> Option<u64> {
-        // TODO: This does not seem to be working
         // Try to find function value going up from the current scope
         let mut current_scope_id = Some(scope_id);
         let mut found_function = false;
         while current_scope_id.is_some() {
-            if current_scope_id.unwrap() == 0 {break;}
             let scope = self.get(&current_scope_id.unwrap());
             let parent_scope_id = scope.parent_scope;
             if scope.functions.contains_key(function_name) {
