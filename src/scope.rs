@@ -39,6 +39,36 @@ impl Type {
         Type::Union(types)
     }
 
+    pub(crate) fn union_from_all(mut types: Vec<Type>) -> Type {
+        if types.len() == 1 {
+            return types.pop().unwrap();
+        }
+        let mut a = types.pop().unwrap();
+        while let Some(b) = types.pop() {
+            a = Self::union_from(a, b);
+        }
+        a
+    }
+
+    pub(crate) fn try_into_iter_inner(self) -> Option<Self> {
+        match self {
+            Type::String => Some(Type::String), // Or Char maybe at some point
+            Type::Object => Some(Type::_Unknown),
+            Type::Range => Some(Type::Integer),
+            Type::Tuple(types) => Some(Self::union_from_all(types)),
+            Type::Array(inner) => Some(*inner),
+            Type::Union(types) => {
+                let inners : Vec<_> = types.into_iter().filter_map(|t| t.try_into_iter_inner()).collect();
+                if inners.is_empty() {
+                    None
+                } else {
+                    Some(Self::union_from_all(inners))
+                }
+            },
+            Type::_Unknown => Some(Type::_Unknown),
+            _ => None
+        }
+    }
 
     pub(crate) fn expect_to_be(&mut self, expected: &Type) -> bool {
         if let Type::_Unknown | Type::Object = &self {

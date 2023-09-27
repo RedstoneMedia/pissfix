@@ -110,6 +110,9 @@ impl TypeChecker {
                     _ => {}
                 }
             },
+            Node::IndexExpression(IndexExpression { index_value, index_into , .. }) => {
+                // TODO: Implement
+            }
             v => eprintln!("Warning: Cannot assign to expression: {:?}", v)
         }
     }
@@ -303,6 +306,21 @@ impl TypeChecker {
             Node::AssignmentExpression(assignment_expression) => {
                 self.check_assignment_expression(assignment_expression, current_scope_id, error_tracker);
             }
+            Node::ExpressionList(ExpressionList { opening: Token {kind: TokenEnum::OpeningBracket, ..}, expressions, .. }) => {
+                let mut last_type = Type::_Unknown;
+                for expr in expressions {
+                    let mut t = self.check_types_recursive(expr, current_scope_id, error_tracker);
+                    if !t.expect_to_be(&last_type) {
+                        error_tracker.add_error(Error::from_span(
+                            expr.get_span(),
+                            format!("Expr type does not match array type, got: {:?}, but should be: {:?}", t, last_type),
+                            ErrorKind::TypeCheckError
+                        ));
+                    }
+                    last_type = t;
+                }
+                return Type::Array(Box::new(last_type));
+            }
             Node::ExpressionList(ExpressionList { expressions, .. }) => {
                 let mut return_types = Vec::with_capacity(expressions.len());
                 for expr in expressions {
@@ -351,6 +369,15 @@ impl TypeChecker {
                 return self.check_types_recursive(body, current_scope_id, error_tracker)
             }
             Node::ForExpression(ForExpression { iteration_var, iterate_over, body , ..}) => {
+                let iterate_over_type = self.check_types_recursive(iterate_over, current_scope_id, error_tracker);
+                let iteration_type = if let Some(it) = iterate_over_type.clone().try_into_iter_inner() {it} else {
+                    error_tracker.add_error(Error::from_span(
+                        iterate_over.get_span(),
+                        format!("Can only iterate over String, or Array, but got: {:?}", iterate_over_type),
+                        ErrorKind::TypeCheckError
+                    ));
+                    Type::_Unknown
+                };
                 if let TokenEnum::Identifier(iteration_var_name) = &iteration_var.kind {
                     if self.all_scopes.find_variable_scope_id_in_scope_by_name(current_scope_id, iteration_var_name).is_some() {
                         error_tracker.add_error(Error::from_span(
@@ -359,28 +386,32 @@ impl TypeChecker {
                             ErrorKind::TypeCheckError
                         ));
                     }
+                    self.all_scopes.get_mut(&current_scope_id).variables.insert(iteration_var_name.clone(), iteration_type);
                 }
-                let mut iterate_over_type = self.check_types_recursive(iterate_over, current_scope_id, error_tracker);
-                if !iterate_over_type.expect_to_be(&Type::Union(vec![
-                    Type::String,
-                    Type::Range,
-                    Type::Object,
-                    Type::Array(Box::new(Type::_Unknown)),
-                ])) {
-                    error_tracker.add_error(Error::from_span(
-                        iterate_over.get_span(),
-                        format!("Can only iterate over String, or Array, but got: {:?}", iterate_over_type),
-                        ErrorKind::TypeCheckError
-                    ));
-                };
-
                 return self.check_types_recursive(body, current_scope_id, error_tracker);
             }
             Node::ReturnExpression(_) => unimplemented!(),
             Node::BreakExpression(_) => {}
-            Node::IndexExpression(_) => {
-                // TODO: Implement
-                return Type::_Unknown
+            Node::IndexExpression(IndexExpression { index_value, index_into, .. }) => {
+                let mut index_type = self.check_types_recursive(index_value, current_scope_id, error_tracker);
+                if !index_type.expect_to_be(&Type::Integer) {
+                    error_tracker.add_error(Error::from_span(
+                        index_value.get_span(),
+                        format!("Indices can only be of type Integer, but got: {:?}", index_type),
+                        ErrorKind::TypeCheckError
+                    ));
+                }
+                let into_type = self.check_types_recursive(index_into, current_scope_id, error_tracker);
+                return if let Some(inner) = into_type.clone().try_into_iter_inner() {
+                    inner
+                } else {
+                    error_tracker.add_error(Error::from_span(
+                        index_into.get_span(),
+                        format!("Can only index into String or Array, but got: {:?}", into_type),
+                        ErrorKind::TypeCheckError
+                    ));
+                    Type::_Unknown
+                }
             }
             Node::CommentExpression(CommentExpression { on , .. }) => {
                 if let Some(on) = on {
