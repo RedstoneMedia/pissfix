@@ -50,6 +50,17 @@ impl Type {
         a
     }
 
+
+    pub(crate) fn try_into_inner_mut(&mut self) -> Option<&mut Self> {
+        match self {
+            Type::String => Some(self),
+            Type::Array(inner) => Some(inner.as_mut()),
+            //Type::Union(t) | Type::Tuple(t) => t.iter_mut().collect(),
+            Type::_Unknown | Type::Object => Some(self),
+            _ => None
+        }
+    }
+
     pub(crate) fn try_into_iter_inner(self) -> Option<Self> {
         match self {
             Type::String => Some(Type::String), // Or Char maybe at some point
@@ -233,7 +244,7 @@ impl AllScopes {
     /// This function tries to find a input variable by name in or above the input scope.
     /// This function will return None, if the variable is not found,
     /// or the lowest possible scope in which the variable exists.
-    pub(crate) fn find_variable_scope_id_in_scope_by_name(&self, scope_id : u64, variable_name: &String) -> Option<u64> {
+    pub(crate) fn find_variable_scope_id_in_scope_by_name(&self, scope_id : u64, variable_name: &str) -> Option<u64> {
         // Try to find variable value going up from the current scope
         let mut current_scope_id = Some(scope_id);
         let mut found_variable = false;
@@ -250,7 +261,7 @@ impl AllScopes {
     }
 
     /// This function does the same thing as find_variable_scope_id_in_scope_by_name, but searches for a function and not variable.
-    pub fn find_function_scope_id_in_scope_by_name(&self, scope_id : u64, function_name: &String) -> Option<u64> {
+    pub fn find_function_scope_id_in_scope_by_name(&self, scope_id : u64, function_name: &str) -> Option<u64> {
         // Try to find function value going up from the current scope
         let mut current_scope_id = Some(scope_id);
         let mut found_function = false;
@@ -267,8 +278,8 @@ impl AllScopes {
     }
 
     /// This function tries to find a variable by name and returns a immutable reference to that variable if it found it.
-    pub(crate) fn find_variable_in_scope_by_name(&self, scope_id : u64, variable_name: &String) -> Option<&Type> {
-        match self.find_variable_scope_id_in_scope_by_name(scope_id, &variable_name) {
+    pub(crate) fn find_variable_in_scope_by_name(&self, scope_id : u64, variable_name: &str) -> Option<&Type> {
+        match self.find_variable_scope_id_in_scope_by_name(scope_id, variable_name) {
             Some(scope_id) => {
                 self.get(&scope_id).variables.get(variable_name)
             },

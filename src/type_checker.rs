@@ -110,8 +110,40 @@ impl TypeChecker {
                     _ => {}
                 }
             },
-            Node::IndexExpression(IndexExpression { index_value, index_into , .. }) => {
-                // TODO: Implement
+            Node::IndexExpression(index_expression) => {
+                self.check_index_expression(index_expression, current_scope_id, error_tracker);
+                // Walk down until hitting inevitable identifier expr
+                let mut current_expression = &index_expression.index_into;
+                let mut depth = 1;
+                while let Node::IndexExpression(IndexExpression { index_into: inner_index_into, ..}) = current_expression.as_ref() {
+                    current_expression = inner_index_into;
+                    depth += 1;
+                }
+                let Node::IdentifierExpression(Token {kind: TokenEnum::Identifier(identifier_string), ..}) = current_expression.as_ref() else {panic!()};
+                // Get variable type of found identifier expr
+                let insert_scope_variables = &mut self.all_scopes.get_mut(&current_scope_id).variables;
+                let Some(var) = insert_scope_variables.get_mut(identifier_string) else {unreachable!("Variable has to exist, because index expression has been checked")};
+                // Get &mut inner type at correct depth
+                let mut inner_set_type = var;
+                for _ in 0..depth {
+                    let Some(t) = inner_set_type.try_into_inner_mut() else {
+                        error_tracker.add_error(Error::from_span(
+                            assignment_expr.get_span(),
+                            format!("Oops"),
+                            ErrorKind::TypeCheckError
+                        ));
+                        return;
+                    };
+                    inner_set_type = t;
+                }
+                // Check (and possibly collapse) inner variable type
+                if !inner_set_type.expect_to_be(&expr_type) {
+                    error_tracker.add_error(Error::from_span(
+                        assignment_expr.value.get_span(),
+                        format!("Cannot assign {:?} to variable of type {:?}", expr_type, inner_set_type),
+                        ErrorKind::TypeCheckError
+                    ));
+                }
             }
             v => eprintln!("Warning: Cannot assign to expression: {:?}", v)
         }
@@ -232,7 +264,7 @@ impl TypeChecker {
                         format!("Incompatible types for boolean math: {:?} and {:?} ", left_type, right_type),
                         ErrorKind::TypeCheckError
                     ));
-                    return Type::union_from(left_type, right_type);
+                    Type::union_from(left_type, right_type)
                 }
             },
             TokenEnum::DoubleEquals | TokenEnum::NotEquals => {
@@ -280,6 +312,28 @@ impl TypeChecker {
                 left_type
             },
             _ => unreachable!()
+        }
+    }
+
+    fn check_index_expression(&mut self, index_expression: &IndexExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Type {
+        let mut index_type = self.check_types_recursive(&index_expression.index_value, current_scope_id, error_tracker);
+        if !index_type.expect_to_be(&Type::Integer) {
+            error_tracker.add_error(Error::from_span(
+                index_expression.index_value.get_span(),
+                format!("Indices can only be of type Integer, but got: {:?}", index_type),
+                ErrorKind::TypeCheckError
+            ));
+        }
+        let into_type = self.check_types_recursive(&index_expression.index_into, current_scope_id, error_tracker);
+        if let Some(inner) = into_type.clone().try_into_iter_inner() {
+            inner
+        } else {
+            error_tracker.add_error(Error::from_span(
+                index_expression.index_into.get_span(),
+                format!("Can only index into String or Array, but got: {:?}", into_type),
+                ErrorKind::TypeCheckError
+            ));
+            Type::_Unknown
         }
     }
 
@@ -392,26 +446,8 @@ impl TypeChecker {
             }
             Node::ReturnExpression(_) => unimplemented!(),
             Node::BreakExpression(_) => {}
-            Node::IndexExpression(IndexExpression { index_value, index_into, .. }) => {
-                let mut index_type = self.check_types_recursive(index_value, current_scope_id, error_tracker);
-                if !index_type.expect_to_be(&Type::Integer) {
-                    error_tracker.add_error(Error::from_span(
-                        index_value.get_span(),
-                        format!("Indices can only be of type Integer, but got: {:?}", index_type),
-                        ErrorKind::TypeCheckError
-                    ));
-                }
-                let into_type = self.check_types_recursive(index_into, current_scope_id, error_tracker);
-                return if let Some(inner) = into_type.clone().try_into_iter_inner() {
-                    inner
-                } else {
-                    error_tracker.add_error(Error::from_span(
-                        index_into.get_span(),
-                        format!("Can only index into String or Array, but got: {:?}", into_type),
-                        ErrorKind::TypeCheckError
-                    ));
-                    Type::_Unknown
-                }
+            Node::IndexExpression(index_expression) => {
+                return self.check_index_expression(index_expression, current_scope_id, error_tracker);
             }
             Node::CommentExpression(CommentExpression { on , .. }) => {
                 if let Some(on) = on {
@@ -426,6 +462,7 @@ impl TypeChecker {
     pub fn check_types(&mut self, node: &Node, error_tracker : &mut ErrorTracker) {
         let root_scope_id = self.all_scopes.insert(Scope::new(None));
         self.check_types_recursive(node, root_scope_id, error_tracker);
+        println!("{:#?}", self.all_scopes)
     }
 
 }
