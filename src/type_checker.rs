@@ -78,7 +78,7 @@ impl TypeChecker {
                     .map(|return_type|return_type.return_type.get_span())
                     .unwrap_or(Span {
                         start_char: base_function_exp.opening_parenthesis.span.start_char,
-                        end_char: base_function_exp.opening_parenthesis.span.end_char
+                        end_char: base_function_exp.closing_parenthesis.span.end_char
                     }),
                 format!("Function returns type: {:?}, but actually has type: {:?}", function.returns, actual_return_type),
                 ErrorKind::TypeCheckError
@@ -389,7 +389,7 @@ impl TypeChecker {
                     Type::Tuple(return_types)
                 }
             }
-            Node::IfExpression(IfExpression { condition, true_branch, false_branch, .. }) => {
+            Node::IfExpression(IfExpression { keyword, condition, true_branch, false_branch, .. }) => {
                 let mut condition_type = self.check_types_recursive(condition, current_scope_id, error_tracker);
                 if !condition_type.expect_to_be(&Type::Boolean) {
                     error_tracker.add_error(Error::from_span(
@@ -398,10 +398,16 @@ impl TypeChecker {
                         ErrorKind::TypeCheckError
                     ));
                 }
-                let true_branch_type = self.check_types_recursive(true_branch, current_scope_id, error_tracker);
+                let mut true_branch_type = self.check_types_recursive(true_branch, current_scope_id, error_tracker);
                 if let Some(false_branch) = false_branch {
                     let false_branch_type = self.check_types_recursive(false_branch, current_scope_id, error_tracker);
-                    return Type::union_from(true_branch_type, false_branch_type);
+                    if !true_branch_type.expect_to_be(&false_branch_type) {
+                        error_tracker.add_error(Error::from_span(
+                            keyword.get_span(),
+                            format!("Branch values mismatch: {:?} and {:?}", true_branch_type, false_branch_type),
+                            ErrorKind::TypeCheckError
+                        ));
+                    }
                 }
                 return true_branch_type;
             }

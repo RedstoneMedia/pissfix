@@ -115,7 +115,7 @@ impl Parser {
             self.next_token += 1;
             let return_type_token = self.next();
 
-            if let TokenEnum::Identifier(_) = return_type_token.kind {} else { //
+            if let TokenEnum::Identifier(_) = return_type_token.kind {} else {
                 return Err(Error::from_span(
                     return_type_token.span,
                     format!("Expected return type after arrow, but got : {:?}", return_type_token),
