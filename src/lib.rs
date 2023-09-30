@@ -6,6 +6,7 @@ pub mod errors;
 mod node;
 pub mod type_checker;
 mod scope;
+mod r#type;
 
 #[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub struct Span {

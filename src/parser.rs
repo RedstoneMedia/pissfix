@@ -73,59 +73,38 @@ impl Parser {
 
     fn parse_base_function_definition(&mut self, opening_parenthesis_token: Token, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<BaseFunctionExpression, Error> {
         // Parse argument list until ")"
-        let mut parameters = vec![];
-        let closing_parenthesis_token = loop {
-            let new_token = self.next();
-            match new_token.kind {
-                TokenEnum::ClosingParentheses => break new_token,
-                TokenEnum::Identifier(..) => {
-                    let colon_token = self.next();
-                    if colon_token.kind != TokenEnum::DoublePoint {
-                        return Err(Error::from_span(
-                            colon_token.span,
-                            format!("Expected Type annotation after parameter name, but got: {:?}", colon_token),
-                            ErrorKind::ParsingError
-                        ))
-                    }
-
-                    let parameter_token = self.next();
-                    if let TokenEnum::Identifier(_) = parameter_token.kind {} else {
-                        return Err(Error::from_span(
-                            colon_token.span,
-                            format!("Expected type after parameter name, but got: {:?}", colon_token),
-                            ErrorKind::ParsingError
-                        ))
-                    }
-
-                    parameters.push(FunctionParameter {
-                        name: new_token,
-                        colon: colon_token,
-                        parameter_type: parameter_token,
-                    })
-                },
-                TokenEnum::Comma => continue,
-                TokenEnum::Separator => continue,
-                _ => return Err(Error::from_span(new_token.span,format!("Unexpected token in function parameter list: {:?}", new_token), ErrorKind::ParsingError))
+        let parameters = self.parse_seperated_expressions_until(&|t| t == TokenEnum::ClosingParentheses, |s| {
+            let name_token = s.next();
+            if let TokenEnum::Identifier(_) = name_token.kind {} else {
+                return Err(Error::from_span(
+                    name_token.span,
+                    format!("Expected parameter name, but got: {:?}", name_token),
+                    ErrorKind::ParsingError
+                ))
             }
-        };
-
+            let colon_token = s.next();
+            if colon_token.kind != TokenEnum::DoublePoint {
+                return Err(Error::from_span(
+                    colon_token.span,
+                    format!("Expected Type annotation after parameter name, but got: {:?}", colon_token),
+                    ErrorKind::ParsingError
+                ))
+            }
+            Ok(FunctionParameter {
+                name: name_token,
+                colon: colon_token,
+                parameter_type: s.parse_type()?,
+            })
+        }, TokenEnum::Comma)?;
+        let closing_parenthesis_token = self.next();
         let possible_arrow_token = self.peek_next(0);
-        let mut return_type = None;
+        let mut function_return_type = None;
         if TokenEnum::Arrow == possible_arrow_token.kind {
             self.next_token += 1;
-            let return_type_token = self.next();
-
-            if let TokenEnum::Identifier(_) = return_type_token.kind {} else {
-                return Err(Error::from_span(
-                    return_type_token.span,
-                    format!("Expected return type after arrow, but got : {:?}", return_type_token),
-                    ErrorKind::ParsingError
-                ));
-            }
-
-            return_type = Some(FunctionReturnType {
+            let return_type = self.parse_type()?;
+            function_return_type = Some(FunctionReturnType {
                 arrow: possible_arrow_token,
-                return_type: return_type_token,
+                return_type,
             });
         }
 
@@ -135,8 +114,40 @@ impl Parser {
             opening_parenthesis: opening_parenthesis_token,
             parameters,
             closing_parenthesis: closing_parenthesis_token,
-            return_type,
+            return_type: function_return_type,
             body: Box::new(body),
+        })
+    }
+
+    fn parse_type(&mut self) -> Result<TypeExpression, Error> {
+        let name_token = self.next();
+        if let TokenEnum::Identifier(_) = name_token.kind {} else {
+            return Err(Error::from_span(
+                name_token.span,
+                format!("Expected type name identifier, but got : {:?}", name_token),
+                ErrorKind::ParsingError
+            ));
+        }
+        if self.peek_next(0).kind != TokenEnum::LessThan {
+            return Ok(TypeExpression {
+                type_name: name_token,
+                generic_parameters: None,
+            })
+        }
+        let generics_opening_token = self.next();
+        let parameters = self.parse_seperated_expressions_until(
+            &|t| t == TokenEnum::GreaterThan,
+            |_self| _self.parse_type(),
+            TokenEnum::Comma
+        )?;
+
+        Ok(TypeExpression {
+            type_name: name_token,
+            generic_parameters: Some(GenericParameters {
+                opening: generics_opening_token,
+                parameters,
+                closing: self.next(),
+            }),
         })
     }
 
@@ -150,6 +161,36 @@ impl Parser {
                 ErrorKind::ParsingError)
             );
         }
+        // Check for possible generic parameters
+        let generic_parameters = if self.peek_next(0).kind == TokenEnum::LessThan {
+            let opening = self.next();
+            let parameters = self.parse_seperated_expressions_until(
+                &|t| t == TokenEnum::GreaterThan,
+                |s| {
+                    let t = s.next();
+                    if let TokenEnum::Identifier(_) = t.kind {
+                        Ok(TypeExpression {
+                            type_name: t,
+                            generic_parameters: None
+                        })
+                    } else {
+                        Err(Error::from_span(
+                            t.span.clone(),
+                            format!("Expected generic type identifier"),
+                            ErrorKind::ParsingError
+                        ))
+                    }
+                },
+                TokenEnum::Comma
+            )?;
+            Some(GenericParameters {
+                opening,
+                parameters,
+                closing: self.next(),
+            })
+        } else {
+            None
+        };
         // Check for "(" of parameter list
         let opening_parenthesis_token = self.next();
         if opening_parenthesis_token.kind != TokenEnum::OpeningParentheses {
@@ -164,6 +205,7 @@ impl Parser {
         Ok(Node::FunctionExpression(FunctionExpression {
             keyword: token,
             name: function_name_identifier_token,
+            generic_parameters,
             base
         }))
     }
@@ -434,6 +476,40 @@ impl Parser {
     fn parse_expression(&mut self, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<(Node, bool), Error> {
         let sub_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
         self.parse_expression_with_sub_expression(sub_expression, last_precedence, false, stop_token_check, error_tracker)
+    }
+
+
+    /// Parses a seperated list of a specific type of expression
+    fn parse_seperated_expressions_until<E, P: Fn(&mut Self) -> Result<E, Error>>(
+        &mut self,
+        stop_token_check: StopTokenCheck,
+        parse_one: P,
+        separator_token_kind: TokenEnum,
+    ) -> Result<Vec<E>, Error> {
+        if stop_token_check(self.peek_next(0).kind) {
+            return Ok(vec![]);
+        }
+        let mut expressions = vec![];
+        loop {
+            let new_token = self.next();
+            if TokenEnum::Separator == new_token.kind {continue;}
+            self.next_token -= 1;
+            expressions.push(parse_one(self)?);
+            let ending_token = self.next();
+            if stop_token_check(ending_token.kind.clone()) {
+                self.next_token -= 1;
+                break;
+            }
+            if separator_token_kind != ending_token.kind {
+                self.next_token -= 1;
+                return Err(Error::from_span(
+                    new_token.span,
+                    format!("Unexpected token in seperated list: {:?}", new_token),
+                    ErrorKind::ParsingError
+                ))
+            }
+        };
+        Ok(expressions)
     }
 
 

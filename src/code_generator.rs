@@ -44,13 +44,13 @@ impl CodeGenerator {
         self.add_with_indent("(", indent_level);
         for parameter in parameters {
             let TokenEnum::Identifier(parameter_name) = &parameter.name.kind else {unreachable!()};
-            let TokenEnum::Identifier(parameter_type) = &parameter.parameter_type.kind else {unreachable!()};
+            let TokenEnum::Identifier(parameter_type) = &parameter.parameter_type.type_name.kind else {unreachable!()};
             self.add_with_indent(&format!("{} :{}, ", parameter_name, parameter_type), indent_level);
         }
         self.code.pop(); // Removes unnecessary trailing ' '
         self.code.pop(); // Removes unnecessary trailing ','
         if let Some(return_type) = return_type {
-            let TokenEnum::Identifier(return_type_ident) = &return_type.return_type.kind else {unreachable!()};
+            let TokenEnum::Identifier(return_type_ident) = &return_type.return_type.type_name.kind else {unreachable!()};
             self.add_with_indent(&format!(" -> :{}", return_type_ident), indent_level);
         };
         self.add_with_indent(") ", indent_level);

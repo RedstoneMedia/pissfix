@@ -1,11 +1,13 @@
 use crate::{GetSpan, Span};
 use crate::node::prelude::BaseFunctionExpression;
+use crate::node::type_expression::GenericParameters;
 use crate::token::Token;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionExpression {
     pub keyword: Token,
     pub name: Token,
+    pub generic_parameters: Option<GenericParameters>,
     pub base: BaseFunctionExpression,
 }
 

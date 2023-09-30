@@ -11,7 +11,7 @@ test_eq(1+2*((4-5)*(4-5))-6/2, 0)
 # Should be -1
 test_eq(-1*(2+3)/5, -1)
 
-fun map(over: Obj, f: Lam) -> Obj {
+fun map<T>(over: T, f: Lam) -> T {
     for i in 0..length(over) {
         v = over[i]
         over[i] = f(v)

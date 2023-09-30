@@ -1,12 +1,13 @@
 use crate::{GetSpan, Span};
 use crate::node::Node;
+use crate::node::type_expression::TypeExpression;
 use crate::token::Token;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionParameter {
     pub name: Token,
     pub colon: Token,
-    pub parameter_type: Token
+    pub parameter_type: TypeExpression
 }
 
 impl GetSpan for FunctionParameter {
@@ -23,7 +24,7 @@ impl GetSpan for FunctionParameter {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionReturnType {
     pub arrow: Token,
-    pub return_type: Token
+    pub return_type: TypeExpression
 }
 
 #[derive(Debug, Clone, PartialEq)]

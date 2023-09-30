@@ -16,7 +16,10 @@ struct Args {
     output_to: Option<PathBuf>,
     /// Werther or not to print the ast of the program
     #[arg(long)]
-    print_ast: bool
+    print_ast: bool,
+    /// Werther or not to print the time it took to transpile the program
+    #[arg(long)]
+    print_time: bool
 }
 
 fn main() {
@@ -34,6 +37,7 @@ fn main() {
     let code = std::fs::read_to_string(&args.input)
         .expect("Could not read input file!");
 
+    let start = std::time::Instant::now();
     let mut error_tracker = ErrorTracker::new();
     let mut lexer = pissfix::lexer::Lexer::new(&code);
     lexer.lex(&mut error_tracker);
@@ -59,7 +63,11 @@ fn main() {
     let mut code_generator = CodeGenerator::default();
     code_generator.generate_code(&root, 0);
     let output_code = code_generator.code.trim_start().trim_end();
+    let elapsed_time = start.elapsed();
     println!("{}", output_code);
+    if args.print_time && !args.print_ast {
+        println!("Took: {:?}μs", elapsed_time.as_micros());
+    }
     if let Some(to) = args.output_to {
         std::fs::write(&to, output_code).expect(&format!("Could not save transpiled code to: {}", to.display()))
     }

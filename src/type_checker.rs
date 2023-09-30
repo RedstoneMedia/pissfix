@@ -2,7 +2,8 @@ use crate::errors::{Error, ErrorKind, ErrorTracker};
 use crate::{GetSpan, Span};
 use crate::node::Node;
 use crate::node::prelude::*;
-use crate::scope::{AllScopes, Function, Scope, Type};
+use crate::r#type::Type;
+use crate::scope::{AllScopes, Function, Scope};
 use crate::token::TokenEnum;
 
 #[derive(Debug, Default)]
@@ -12,6 +13,51 @@ pub struct TypeChecker {
 
 impl TypeChecker {
 
+    fn check_type_expression(&mut self, type_expression: &TypeExpression, generic_types: &Vec<TypeExpression>, error_tracker: &mut ErrorTracker) -> Type {
+        let TokenEnum::Identifier(type_name) = &type_expression.type_name.kind else {unreachable!()};
+        if let Some(_) = generic_types.iter().find(|g| {
+            let TokenEnum::Identifier(generic_type_name) = &g.type_name.kind else {unreachable!()};
+            generic_type_name == type_name
+        }) {
+            return Type::Generic(type_name.clone())
+        }
+        match type_name.as_ref() {
+            "Int" => Type::Integer,
+            "Flt" => Type::Float,
+            "Str" => Type::String,
+            "Bool" => Type::Boolean,
+            "Obj" => Type::Object,
+            "Lam" => Type::Lambda(Box::new(Function {
+                parameters: vec![], // Unknown until generics are implemented
+                returns: Type::_Unknown, // Unknown until generics are implemented
+                scope_id: u64::MAX, // Unknown until generics are implemented
+            })),
+            "Arr" => {
+                let inner_type = type_expression.generic_parameters
+                    .as_ref()
+                    .map(|p| p.parameters.get(0))
+                    .flatten();
+                let Some(inner) = inner_type else {
+                    error_tracker.add_error(Error::from_span(
+                        type_expression.type_name.get_span(),
+                        format!("Array needs one generic type argument"),
+                        ErrorKind::TypeCheckError
+                    ));
+                    return Type::_Unknown
+                };
+                self.check_type_expression(inner, generic_types, error_tracker)
+            },
+            _ => {
+                error_tracker.add_error(Error::from_span(
+                    type_expression.type_name.get_span(),
+                    format!("Invalid type name: {:?}", type_name),
+                    ErrorKind::TypeCheckError
+                ));
+                Type::_Unknown
+            }
+        }
+    }
+
     fn check_function_expression(&mut self, function_expr: &FunctionExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) {
         let TokenEnum::Identifier(function_name) = &function_expr.name.kind else {unreachable!()};
         // If function is already defined in current scope don't re define it.
@@ -20,7 +66,9 @@ impl TypeChecker {
             return;
         }
 
-        let function = self.half_check_base_function_expression(&function_expr.base, current_scope_id, error_tracker);
+        let empty = Vec::with_capacity(0);
+        let generic_types = function_expr.generic_parameters.as_ref().map(|g| &g.parameters).unwrap_or(&empty);
+        let function = self.half_check_base_function_expression(&function_expr.base, generic_types, current_scope_id, error_tracker);
         let function_scope_id = function.scope_id;
         self.all_scopes.get_mut(&current_scope_id).functions.insert(function_name.clone(), function);
 
@@ -41,17 +89,15 @@ impl TypeChecker {
         function.returns = actual_return_type;
     }
 
-    fn half_check_base_function_expression(&mut self, base_function_exp: &BaseFunctionExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Function {
-        // TODO: Create actual error when try_from fails
+    fn half_check_base_function_expression(&mut self, base_function_exp: &BaseFunctionExpression, generic_types: &Vec<TypeExpression>, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Function {
         let parameters : Vec<_> = base_function_exp.parameters.iter().map(|FunctionParameter { name, parameter_type, .. }| {
             let TokenEnum::Identifier(name) = &name.kind else {unreachable!()};
-            let t = Type::try_from(parameter_type).unwrap();
+            let t = self.check_type_expression(parameter_type, generic_types, error_tracker);
             (name.clone(), t)
         }).collect();
 
-        // TODO: Create actual error when try_from fails
         let return_type = base_function_exp.return_type.as_ref()
-            .map(|return_type| Type::try_from(&return_type.return_type).unwrap())
+            .map(|return_type| self.check_type_expression(&return_type.return_type, generic_types, error_tracker))
             .unwrap_or(Type::_None);
 
         let mut function_scope = Scope::new(Some(current_scope_id));
@@ -68,7 +114,7 @@ impl TypeChecker {
     }
 
     fn check_base_function_expression(&mut self, base_function_exp: &BaseFunctionExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Function {
-        let mut function = self.half_check_base_function_expression(base_function_exp, current_scope_id, error_tracker);
+        let mut function = self.half_check_base_function_expression(base_function_exp, &vec![], current_scope_id, error_tracker);
         // Check out function return type
         let mut actual_return_type = self.check_types_recursive(&base_function_exp.body, function.scope_id, error_tracker);
         // TODO: expect_to_be is not correct here
@@ -468,7 +514,6 @@ impl TypeChecker {
     pub fn check_types(&mut self, node: &Node, error_tracker : &mut ErrorTracker) {
         let root_scope_id = self.all_scopes.insert(Scope::new(None));
         self.check_types_recursive(node, root_scope_id, error_tracker);
-        println!("{:#?}", self.all_scopes)
     }
 
 }
