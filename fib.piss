@@ -53,7 +53,7 @@ fun fibonacii(n: Int) -> Int {
     }
 }
 
-fun factorial(n: Int) -> Obj {
+fun factorial(n: Int) -> Int {
     product = 1
     while n != 0 {
         product *= n # This does the thing
