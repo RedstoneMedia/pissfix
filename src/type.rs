@@ -26,7 +26,8 @@ impl AllGenerics {
 
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Generic {
     pub name: String,
     pub requirements: Vec<GenericRequirement>
@@ -42,42 +43,132 @@ impl Generic {
         Type::Generic(id)
     }
 
+    pub(crate) fn to_string(&self, all_generics: &AllGenerics) -> String {
+        if self.requirements.is_empty() {
+            return if !self.name.is_empty() {
+                self.name.clone()
+            } else {
+                "Any".to_string()
+            }
+        }
+        let requirements_strings : Vec<_> = self.requirements.iter()
+            .map(|req| req.to_string(all_generics))
+            .collect();
+        let requirement_string = requirements_strings.join(" and ");
+        let name = if self.name.is_empty() {
+            "Type".to_string()
+        } else {
+            self.name.clone()
+        };
+        if requirements_strings.len() > 1 {
+            format!("{} supporting: ({})", name, requirement_string)
+        } else {
+            format!("{} supporting {}", name, requirement_string)
+        }
+    }
+
+    fn ensure_fulfills(&mut self, t: &Type, all_generics: &mut AllGenerics) -> bool {
+        if let Type::Generic(additional_requirements_id) = t {
+            let additional_requirements = all_generics.get(additional_requirements_id).requirements.clone();
+            for requirement in additional_requirements {
+                self.require(requirement, all_generics);
+            }
+            return true; // Generics are always fulfilled, if the requirements are made to match
+        }
+        self.requirements.iter()
+            .all(|req| {
+                req.does_fulfill(t, all_generics)
+            })
+    }
+
+    fn require(&mut self, requirement: GenericRequirement, all_generics: &mut AllGenerics) {
+        let already_required = self.requirements.iter()
+            .any(|req| req.eq(&requirement, all_generics));
+        if !already_required {
+            self.requirements.push(requirement);
+        }
+    }
+
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub(crate) enum GenericRequirement {
     Index(Option<u64>),
-    Equality,
-    Addition,
-    Subtraction,
-    Multiplication,
-    Division
+    Equality(Type),
+    Addition(Type),
+    Subtraction(Type),
+    Multiplication(Type),
+    Division(Type)
 }
 
 impl GenericRequirement {
 
-    pub fn does_fulfill(&self, t: &Type, all_generics: &AllGenerics) -> bool {
-        match (self, t) {
-            (_, Type::Object | Type::Generic {..}) => true,
+    pub fn does_fulfill(&self, t: &Type, all_generics: &mut AllGenerics) -> bool {
+        let b = match (self, t) {
+            (_, Type::Object | Type::Generic(_)) => true,
             (_, Type::Union(types)) => {
                 types.iter().all(|t| self.does_fulfill(t, all_generics))
             },
             (Self::Index(None), Type::Array(_)) => true,
             (Self::Index(Some(inner_generic_id)), Type::Array(inner)) => {
-                let inner_reqs = &all_generics.get(inner_generic_id).requirements;
-                inner_reqs.iter()
-                    .all(|req| req.does_fulfill(inner, all_generics))
+                let mut generic = Default::default();
+                std::mem::swap(&mut generic, all_generics.get_mut(inner_generic_id));
+                let r = generic.ensure_fulfills(inner, all_generics);
+                std::mem::swap(&mut generic, all_generics.get_mut(inner_generic_id));
+                r
             }
             (Self::Index(None), Type::String) => true,
             (Self::Index(Some(inner_generic_id)), Type::String) => {
                 let inner_reqs = &all_generics.get(inner_generic_id).requirements;
                 !inner_reqs.iter()
-                    .any(|req| matches!(req, GenericRequirement::Subtraction | GenericRequirement::Division | GenericRequirement::Multiplication | GenericRequirement::Index(_)))
+                    .any(|req| matches!(req, GenericRequirement::Subtraction(_) | GenericRequirement::Division(_) | GenericRequirement::Multiplication(_) | GenericRequirement::Index(_)))
             },
-            (Self::Equality, Type::String | Type::Integer | Type::Boolean) => true,
-            (Self::Addition, Type::Integer | Type::Float | Type::String) => true,
-            (Self::Subtraction | Self::Multiplication | Self::Division, Type::Integer | Type::Float) => true,
+            (
+                Self::Equality(with)
+                | Self::Addition(with)
+                | Self::Subtraction(with)
+                | Self::Multiplication(with)
+                | Self::Division(with)
+                , _
+            ) => t.expect_to_be(with, all_generics),
             _ => false
+        };
+        b
+    }
+
+    fn eq(&self, other: &Self, all_generics: &mut AllGenerics) -> bool {
+        if let (GenericRequirement::Index(id_a), GenericRequirement::Index(id_b)) = (self, other) {
+            if id_a.is_none() || id_b.is_none() {
+                return true;
+            }
+            return id_a == id_b;
+        }
+        let (with_a, with_b) = match (self, other) {
+            (GenericRequirement::Equality(a), GenericRequirement::Equality(b)) => (a, b),
+            (GenericRequirement::Addition(a), GenericRequirement::Addition(b)) => (a, b),
+            (GenericRequirement::Subtraction(a), GenericRequirement::Subtraction(b)) => (a, b),
+            (GenericRequirement::Multiplication(a), GenericRequirement::Multiplication(b)) => (a, b),
+            (GenericRequirement::Division(a), GenericRequirement::Division(b)) => (a, b),
+            (_, _) => return false
+        };
+        with_a.expect_to_be(with_b, all_generics)
+    }
+
+    pub(crate) fn to_string(&self, all_generics: &AllGenerics) -> String {
+        match self {
+            GenericRequirement::Index(id) => {
+                if let Some(id) = id {
+                    let generic = all_generics.get(id);
+                    format!("Indexing with inner: [{}]", generic.to_string(all_generics))
+                } else {
+                    "Indexing".to_string()
+                }
+            },
+            GenericRequirement::Equality(with) => format!("Equality with {:?}", with),
+            GenericRequirement::Addition(with) => format!("Addition with {:?}", with),
+            GenericRequirement::Subtraction(with) => format!("Subtraction with {:?}", with),
+            GenericRequirement::Multiplication(with) => format!("Multiplication with {:?}", with),
+            GenericRequirement::Division(with) => format!("Division with {:?}", with),
         }
     }
 
@@ -145,13 +236,15 @@ impl Type {
     }
 
     pub(crate) fn expect_to_be(&self, expected: &Type, all_generics: &mut AllGenerics) -> bool {
-        if let Type::Generic(id) = self {
-            return all_generics.get(id).requirements.iter()
-                .all(|req| req.does_fulfill(expected, all_generics))
-        }
         if let Type::Generic(id) = expected {
-            return all_generics.get(id).requirements.iter()
-                .all(|req| req.does_fulfill(self, all_generics))
+            let mut generic = Default::default();
+            std::mem::swap(&mut generic, all_generics.get_mut(id));
+            let r = generic.ensure_fulfills(self, all_generics);
+            std::mem::swap(&mut generic, all_generics.get_mut(id));
+            return r;
+        }
+        if let Type::Generic(_) = self {
+            return false;
         }
 
         match (expected, self) {
@@ -218,12 +311,45 @@ impl Type {
             return Err(());
         }
         if let Type::Generic(id) = self {
-            let requirements = &mut all_generics.get_mut(id).requirements;
-            if !requirements.contains(&requirement) {
-                requirements.push(requirement);
-            }
+            let mut generic = Default::default();
+            std::mem::swap(&mut generic, all_generics.get_mut(id));
+            generic.require(requirement, all_generics);
+            std::mem::swap(&mut generic, all_generics.get_mut(id));
         }
         Ok(())
+    }
+
+    pub(crate) fn to_string(&self, all_generics: &AllGenerics) -> String {
+        match self {
+            Type::Integer => "Integer".to_string(),
+            Type::Float => "Float".to_string(),
+            Type::String => "String".to_string(),
+            Type::Boolean => "Boolean".to_string(),
+            Type::Object => "Object".to_string(),
+            Type::Range => "Range".to_string(),
+            Type::Lambda(func) => format!(
+                "Lambda ({}) -> {}",
+                func.parameters.iter()
+                    .map(|(_, t)| t.to_string(all_generics))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                func.returns.to_string(all_generics)
+            ),
+            Type::Tuple(inner) => format!("({:?})", inner.iter()
+                .map(|t| t.to_string(all_generics))
+                .collect::<Vec<_>>()
+                .join(", ")),
+            Type::Array(inner) => format!("Array<{}>", inner.to_string(all_generics)),
+            Type::Union(types) => types.iter()
+                .map(|t| t.to_string(all_generics))
+                .collect::<Vec<_>>()
+                .join(" | "),
+            Type::Generic(generic_id) => {
+                let generic = all_generics.get(generic_id);
+                generic.to_string(all_generics)
+            }
+            Type::_None => "None".to_string()
+        }
     }
 
 }

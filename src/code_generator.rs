@@ -185,7 +185,7 @@ impl CodeGenerator {
                 };
                 self.add_with_indent(" if", indent_level);
             }
-            Node::FunctionExpression(FunctionExpression { name, base, ..}) => {
+            Node::FunctionExpression(FunctionExpression { name, base, generic_parameters, ..}) => {
                 let TokenEnum::Identifier(name_ident) = &name.kind else {unreachable!()};
                 let name_ident = replace_function_ident(name_ident);
                 self.add_with_indent(&format!(":{}", name_ident), indent_level);

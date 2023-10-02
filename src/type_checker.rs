@@ -56,7 +56,7 @@ impl TypeChecker {
             _ => {
                 error_tracker.add_error(Error::from_span(
                     type_expression.type_name.get_span(),
-                    format!("Invalid type name: {:?}", type_name),
+                    format!("Invalid type name: {}", type_name),
                     ErrorKind::TypeCheckError
                 ));
                 self.unknown()
@@ -92,7 +92,7 @@ impl TypeChecker {
                 function_expr.base.return_type.as_ref()
                          .map(|return_type|return_type.return_type.get_span())
                          .unwrap_or(function_expr.name.get_span()),
-                format!("Function returns type: {:?}, but actually has type: {:?}", function.returns, actual_return_type),
+                format!("Function returns type: {}, but actually has type: {}", function.returns.to_string(&self.all_generics), actual_return_type.to_string(&self.all_generics)),
                 ErrorKind::TypeCheckError
             ));
             return;
@@ -137,7 +137,7 @@ impl TypeChecker {
                         start_char: base_function_exp.opening_parenthesis.span.start_char,
                         end_char: base_function_exp.closing_parenthesis.span.end_char
                     }),
-                format!("Function returns type: {:?}, but actually has type: {:?}", function.returns, actual_return_type),
+                format!("Function returns type: {}, but actually has type: {}", function.returns.to_string(&self.all_generics), actual_return_type.to_string(&self.all_generics)),
                 ErrorKind::TypeCheckError
             ));
         }
@@ -158,7 +158,7 @@ impl TypeChecker {
                         if !t.expect_to_be(&expr_type, &mut self.all_generics) {
                             error_tracker.add_error(Error::from_span(
                                 assignment_expr.get_span(),
-                                format!("Cannot assign {:?} to variable of type {:?}", expr_type, t),
+                                format!("Cannot assign {} to variable of type {}", expr_type.to_string(&self.all_generics), t.to_string(&self.all_generics)),
                                 ErrorKind::TypeCheckError
                             ));
                         }
@@ -197,7 +197,7 @@ impl TypeChecker {
                 if !inner_set_type.expect_to_be(&expr_type, &mut self.all_generics) {
                     error_tracker.add_error(Error::from_span(
                         assignment_expr.value.get_span(),
-                        format!("Cannot assign {:?} to variable of type {:?}", expr_type, inner_set_type),
+                        format!("Cannot assign {} to variable of type {}", expr_type.to_string(&self.all_generics), inner_set_type.to_string(&self.all_generics)),
                         ErrorKind::TypeCheckError
                     ));
                 }
@@ -242,7 +242,7 @@ impl TypeChecker {
                     if !actual.expect_to_be(expected, &mut self.all_generics) {
                         error_tracker.add_error(Error::from_span(
                             call_expr.get_span(),
-                            format!("Function argument type does not match, expected: {:?}, but got: {:?}", expected, actual),
+                            format!("Function argument type does not match, expected: {}, but got: {}", expected.to_string(&self.all_generics), actual.to_string(&self.all_generics)),
                             ErrorKind::TypeCheckError
                         ));
                         return function_return_type;
@@ -307,7 +307,7 @@ impl TypeChecker {
                 if !left_type.expect_to_be(&Type::Integer, &mut self.all_generics) {
                     error_tracker.add_error(Error::from_span(
                         binary_expr.get_span(),
-                        format!("Found non integer types for range: {:?} and {:?}", left_type, right_type),
+                        format!("Found non integer types for range: {} and {}", left_type.to_string(&self.all_generics), right_type.to_string(&self.all_generics)),
                         ErrorKind::TypeCheckError
                     ));
                 }
@@ -318,58 +318,38 @@ impl TypeChecker {
                 (_, _) => {
                     error_tracker.add_error(Error::from_span(
                         binary_expr.get_span(),
-                        format!("Incompatible types for boolean math: {:?} and {:?} ", left_type, right_type),
+                        format!("Incompatible types for boolean math: {} and {} ", left_type.to_string(&self.all_generics), right_type.to_string(&self.all_generics)),
                         ErrorKind::TypeCheckError
                     ));
                     Type::Boolean
                 }
             },
             TokenEnum::DoubleEquals | TokenEnum::NotEquals => {
-                if let Err(_) = left_type.require(GenericRequirement::Equality, &mut self.all_generics) {
-                    error_tracker.add_error(Error::from_span(
-                        binary_expr.left.get_span(),
-                        format!("Type: {:?} does not support equality", left_type),
-                        ErrorKind::TypeCheckError
-                    ));
-                };
-                if let Err(_) = right_type.require(GenericRequirement::Equality, &mut self.all_generics) {
-                    error_tracker.add_error(Error::from_span(
-                        binary_expr.right.get_span(),
-                        format!("Type: {:?} does not support equality", right_type),
-                        ErrorKind::TypeCheckError
-                    ));
-                };
-                if !left_type.expect_to_be(&right_type, &mut self.all_generics) {
+                if let Err(_) = left_type.require(GenericRequirement::Equality(right_type.clone()), &mut self.all_generics) {
                     error_tracker.add_error(Error::from_span(
                         binary_expr.get_span(),
-                        format!("Comparison types have different types: {:?} and {:?} ", left_type, right_type),
+                        format!("Type: {} does not support equality with: {}", left_type.to_string(&self.all_generics), right_type.to_string(&self.all_generics)),
                         ErrorKind::TypeCheckError
                     ));
-                }
+                };
                 Type::Boolean
             }
             TokenEnum::Plus | TokenEnum::Minus | TokenEnum::Multiply | TokenEnum::Divide => {
                 let requirement = match binary_expr.operation.kind {
-                    TokenEnum::Plus {..} => GenericRequirement::Addition,
-                    TokenEnum::Minus {..} => GenericRequirement::Subtraction,
-                    TokenEnum::Multiply {..} => GenericRequirement::Multiplication,
-                    TokenEnum::Divide {..} => GenericRequirement::Division,
+                    TokenEnum::Plus {..} => GenericRequirement::Addition(right_type.clone()),
+                    TokenEnum::Minus {..} => GenericRequirement::Subtraction(right_type.clone()),
+                    TokenEnum::Multiply {..} => GenericRequirement::Multiplication(right_type.clone()),
+                    TokenEnum::Divide {..} => GenericRequirement::Division(right_type.clone()),
                     _ => unreachable!("")
                 };
                 if let Err(_) = left_type.require(requirement.clone(), &mut self.all_generics) {
                     error_tracker.add_error(Error::from_span(
-                        binary_expr.left.get_span(),
-                        format!("Type: {:?} does not support {:?}", left_type, requirement),
+                        binary_expr.get_span(),
+                        format!("Type: {} does not support {}", left_type.to_string(&self.all_generics), requirement.to_string(&self.all_generics)),
                         ErrorKind::TypeCheckError
                     ));
                 };
-                if let Err(_) = right_type.require(requirement.clone(), &mut self.all_generics) {
-                    error_tracker.add_error(Error::from_span(
-                        binary_expr.right.get_span(),
-                        format!("Type: {:?} does not support {:?}", right_type, requirement),
-                        ErrorKind::TypeCheckError
-                    ));
-                };
+                /*
                 // Check for equality of left and right hand types
                 if !left_type.expect_to_be(&right_type, &mut self.all_generics) {
                     error_tracker.add_error(Error::from_span(
@@ -378,7 +358,7 @@ impl TypeChecker {
                         ErrorKind::TypeCheckError
                     ));
                     return self.unknown();
-                }
+                }*/
                 left_type
             },
             _ => unreachable!()
@@ -390,7 +370,7 @@ impl TypeChecker {
         if !index_type.expect_to_be(&Type::Integer, &mut self.all_generics) {
             error_tracker.add_error(Error::from_span(
                 index_expression.index_value.get_span(),
-                format!("Indices can only be of type Integer, but got: {:?}", index_type),
+                format!("Indices can only be of type Integer, but got: {}", index_type.to_string(&self.all_generics)),
                 ErrorKind::TypeCheckError
             ));
         }
@@ -398,7 +378,7 @@ impl TypeChecker {
         if let Err(_) = into_type.require(GenericRequirement::Index(None), &mut self.all_generics) {
             error_tracker.add_error(Error::from_span(
                 index_expression.index_into.get_span(),
-                format!("Type: {:?} does not support indexing", into_type),
+                format!("Type: {} does not support indexing", into_type.to_string(&self.all_generics)),
                 ErrorKind::TypeCheckError
             ));
             return self.unknown();
@@ -436,7 +416,7 @@ impl TypeChecker {
                     if !t.expect_to_be(&last_type, &mut self.all_generics) {
                         error_tracker.add_error(Error::from_span(
                             expr.get_span(),
-                            format!("Expr type does not match array type, got: {:?}, but should be: {:?}", t, last_type),
+                            format!("Expr type does not match array type, got: {}, but should be: {}", t.to_string(&self.all_generics), last_type.to_string(&self.all_generics)),
                             ErrorKind::TypeCheckError
                         ));
                     }
@@ -463,7 +443,7 @@ impl TypeChecker {
                 if !condition_type.expect_to_be(&Type::Boolean, &mut self.all_generics) {
                     error_tracker.add_error(Error::from_span(
                         condition.get_span(),
-                        format!("If condition has to be of type Boolean, but got: {:?}", condition_type),
+                        format!("If condition has to be of type Boolean, but got: {}", condition_type.to_string(&self.all_generics)),
                         ErrorKind::TypeCheckError
                     ));
                 }
@@ -473,7 +453,7 @@ impl TypeChecker {
                     if !true_branch_type.expect_to_be(&false_branch_type, &mut self.all_generics) {
                         error_tracker.add_error(Error::from_span(
                             keyword.get_span(),
-                            format!("Branch values mismatch: {:?} and {:?}", true_branch_type, false_branch_type),
+                            format!("Branch values mismatch: {} and {}", true_branch_type.to_string(&self.all_generics), false_branch_type.to_string(&self.all_generics)),
                             ErrorKind::TypeCheckError
                         ));
                     }
@@ -491,7 +471,7 @@ impl TypeChecker {
                 if !condition_type.expect_to_be(&Type::Boolean, &mut self.all_generics) {
                     error_tracker.add_error(Error::from_span(
                         condition.get_span(),
-                        format!("While condition has to be of type Boolean, but got: {:?}", condition_type),
+                        format!("While condition has to be of type Boolean, but got: {}", condition_type.to_string(&self.all_generics)),
                         ErrorKind::TypeCheckError
                     ));
                 }
@@ -502,7 +482,7 @@ impl TypeChecker {
                 let iteration_type = if let Some(it) = iterate_over_type.clone().try_into_iter_inner(&mut self.all_generics) {it} else {
                     error_tracker.add_error(Error::from_span(
                         iterate_over.get_span(),
-                        format!("Can only iterate over String, or Array, but got: {:?}", iterate_over_type),
+                        format!("Can only iterate over String, or Array, but got: {}", iterate_over_type.to_string(&self.all_generics)),
                         ErrorKind::TypeCheckError
                     ));
                     self.unknown()
@@ -511,7 +491,7 @@ impl TypeChecker {
                     if self.all_scopes.find_variable_scope_id_in_scope_by_name(current_scope_id, iteration_var_name).is_some() {
                         error_tracker.add_error(Error::from_span(
                             iteration_var.get_span(),
-                            format!("Reused variable for for loop: {:?}", iteration_var_name),
+                            format!("Reused variable for for loop: {}", iteration_var_name),
                             ErrorKind::TypeCheckError
                         ));
                     }
