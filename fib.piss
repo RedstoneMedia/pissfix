@@ -21,11 +21,10 @@ fun map<T>(over: T, f: Lam) -> T {
 
 # Should be Ifmmp!Xpsme"
 test_eq(map("Hello World!", (c: Str) -> Str {
-    # char_code = str_to_chars(c)[0]
-    # char_to_str(char_code + 1)
-    # ^ This is not possible until casting is implemented (return of char_to_str is Any, but Any can not be converted to Str)
-    c
+    char_code = str_to_chars(c)[0]
+    char_to_str(char_code + 1)
 }), "Ifmmp!Xpsme\"")
+
 # Should be [3, 5, 7, 9, 11, 13]
 test_eq(map([1, 1+1, 2+1, 2*2, 5, 6], (n: Int) -> Int {
     n * 2 + 1
@@ -64,6 +63,6 @@ fun factorial(n: Int) -> Int {
     product
 }
 
-fact = factorial(5)
+fact = factorial(read_int())
 println("Input: " + str(fact))
 println("Output: " + str(fibonacii(fact)))

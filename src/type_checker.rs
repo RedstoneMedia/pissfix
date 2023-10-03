@@ -10,7 +10,8 @@ use crate::token::TokenEnum;
 #[derive(Debug, Default)]
 pub struct TypeChecker {
     all_scopes: AllScopes,
-    all_generics: AllGenerics
+    all_generics: AllGenerics,
+    function_recursive_calls_check_stack: Vec<(String, Vec<(CallExpression, Vec<Type>)>)>
 }
 
 impl TypeChecker {
@@ -32,7 +33,6 @@ impl TypeChecker {
             "Flt" => Type::Float,
             "Str" => Type::String,
             "Bool" => Type::Boolean,
-            "Obj" => Type::Object,
             "Lam" => Type::Lambda(Box::new(Function {
                 parameters: vec![], // Unknown until generics are properly implemented
                 returns: self.unknown(), // Unknown until generics are properly implemented
@@ -83,10 +83,12 @@ impl TypeChecker {
         let function_scope_id = function.scope_id;
         self.all_scopes.get_mut(&current_scope_id).functions.insert(function_name.clone(), function);
 
-        // Check out function return type
+        // Check function body
+        self.function_recursive_calls_check_stack.push((function_name.clone(), vec![]));
         let actual_return_type = self.check_types_recursive(&function_expr.base.body, function_scope_id, error_tracker);
+        let (_, unchecked_recursive_calls) = self.function_recursive_calls_check_stack.pop().unwrap();
+        // Check out function return type
         let function = self.all_scopes.get_mut(&current_scope_id).functions.get_mut(function_name).unwrap();
-        // TODO: expect_to_be is not correct here, as it narrows down the type of unions (Which is not valid here). A fn that specifies -> Int but actually returns Union(Int, String) should not be valid
         if !actual_return_type.expect_to_be(&function.returns, &mut self.all_generics) {
             error_tracker.add_error(Error::from_span(
                 function_expr.base.return_type.as_ref()
@@ -98,6 +100,11 @@ impl TypeChecker {
             return;
         }
         function.returns = actual_return_type;
+        // Lastly check recursive calls
+        let parameters = function.parameters.clone();
+        for (call_expression, arguments) in unchecked_recursive_calls {
+            self.check_call_expression_argument_validity(&call_expression, &parameters, &arguments, error_tracker);
+        }
     }
 
     fn half_check_base_function_expression(&mut self, base_function_exp: &BaseFunctionExpression, generic_types: &Vec<u64>, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Function {
@@ -206,6 +213,18 @@ impl TypeChecker {
         }
     }
 
+    fn check_call_expression_argument_validity(&mut self, call_expr: &CallExpression, parameters: &Vec<(String, Type)>, arguments: &Vec<Type>, error_tracker : &mut ErrorTracker) {
+        for ((_, expected), actual) in parameters.iter().zip(arguments.iter()) {
+            if !actual.expect_to_be(expected, &mut self.all_generics) {
+                error_tracker.add_error(Error::from_span(
+                    call_expr.get_span(),
+                    format!("Function argument type does not match, expected: {}, but got: {}", expected.to_string(&self.all_generics), actual.to_string(&self.all_generics)),
+                    ErrorKind::TypeCheckError
+                ));
+            }
+        }
+    }
+
     fn check_call_expression(&mut self, call_expr: &CallExpression, current_scope_id: u64, error_tracker : &mut ErrorTracker) -> Type {
         let TokenEnum::Identifier(function_name) = &call_expr.name.kind else {unreachable!()};
 
@@ -235,19 +254,20 @@ impl TypeChecker {
                     ));
                     return function_return_type;
                 }
-
-                let function_parameters = function.parameters.clone();
-                for ((_, expected), expr) in function_parameters.iter().zip(call_expr.arguments.iter()) {
-                    let actual = self.check_types_recursive(expr, current_scope_id, error_tracker);
-                    if !actual.expect_to_be(expected, &mut self.all_generics) {
-                        error_tracker.add_error(Error::from_span(
-                            call_expr.get_span(),
-                            format!("Function argument type does not match, expected: {}, but got: {}", expected.to_string(&self.all_generics), actual.to_string(&self.all_generics)),
-                            ErrorKind::TypeCheckError
-                        ));
-                        return function_return_type;
-                    }
+                let parameters = function.parameters.clone();
+                // Check and get argument types
+                let argument_types : Vec<_> = call_expr.arguments.iter().map(|expr| {
+                    self.check_types_recursive(expr, current_scope_id, error_tracker)
+                }).collect();
+                // Check if function call is done to a function that is currently being checked. Aka a recursive call
+                // The argument validly is not describable here, because the called function is not yet fully checked. This is important for generic requirements on the parameters, that might not be known yet.
+                if let Some((_, call_infos)) = self.function_recursive_calls_check_stack.iter_mut().find(|(name, _)| function_name == name) {
+                    let call_info = (call_expr.clone(), argument_types);
+                    call_infos.push(call_info);
+                    return function_return_type;
                 }
+                // Check if the arguments are valid
+                self.check_call_expression_argument_validity(call_expr, &parameters, &argument_types, error_tracker);
                 function_return_type
             },
             None => {
@@ -298,6 +318,40 @@ impl TypeChecker {
         }
     }
 
+    /// Requires that both types are equal and both support the desired operation
+    fn binary_require_both(&mut self, left: &Type, right: &Type, binary_expr: &BinaryExpression, error_tracker: &mut ErrorTracker) {
+        let (left_requirement, right_requirement) = match binary_expr.operation.kind {
+            TokenEnum::DoubleEquals {..} | TokenEnum::NotEquals {..} => (GenericRequirement::Equality(right.clone()), GenericRequirement::Equality(left.clone())),
+            TokenEnum::Plus {..} => (GenericRequirement::Addition(right.clone()), GenericRequirement::Addition(left.clone())),
+            TokenEnum::Minus {..} => (GenericRequirement::Subtraction(right.clone()), GenericRequirement::Subtraction(left.clone())),
+            TokenEnum::Multiply {..} => (GenericRequirement::Multiplication(right.clone()), GenericRequirement::Multiplication(left.clone())),
+            TokenEnum::Divide {..} => (GenericRequirement::Division(right.clone()), GenericRequirement::Division(left.clone())),
+            _ => unreachable!("Not a binary operator token: {:?}", binary_expr.operation.kind)
+        };
+
+        if let Err(_) = left.require(left_requirement.clone(), &mut self.all_generics) {
+            error_tracker.add_error(Error::from_span(
+                binary_expr.left.get_span(),
+                format!("Type: {} does not support {}", left.to_string(&self.all_generics), left_requirement.to_string(&self.all_generics)),
+                ErrorKind::TypeCheckError
+            ));
+        };
+        if let Err(_) = right.require(right_requirement.clone(), &mut self.all_generics) {
+            error_tracker.add_error(Error::from_span(
+                binary_expr.right.get_span(),
+                format!("Type: {} does not support {}", right.to_string(&self.all_generics), right_requirement.to_string(&self.all_generics)),
+                ErrorKind::TypeCheckError
+            ));
+        };
+        if !left.expect_to_be(&right, &mut self.all_generics) {
+            error_tracker.add_error(Error::from_span(
+                binary_expr.get_span(),
+                format!("Left and right hand side types are not the same: {} and {}", left.to_string(&self.all_generics), right.to_string(&self.all_generics)),
+                ErrorKind::TypeCheckError
+            ));
+        }
+    }
+
     fn check_binary_expression(&mut self, binary_expr: &BinaryExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Type {
         let left_type = self.check_types_recursive(&binary_expr.left, current_scope_id, error_tracker);
         let right_type = self.check_types_recursive(&binary_expr.right, current_scope_id, error_tracker);
@@ -325,43 +379,42 @@ impl TypeChecker {
                 }
             },
             TokenEnum::DoubleEquals | TokenEnum::NotEquals => {
-                if let Err(_) = left_type.require(GenericRequirement::Equality(right_type.clone()), &mut self.all_generics) {
-                    error_tracker.add_error(Error::from_span(
-                        binary_expr.get_span(),
-                        format!("Type: {} does not support equality with: {}", left_type.to_string(&self.all_generics), right_type.to_string(&self.all_generics)),
-                        ErrorKind::TypeCheckError
-                    ));
-                };
+                self.binary_require_both(&left_type, &right_type, binary_expr, error_tracker);
                 Type::Boolean
             }
             TokenEnum::Plus | TokenEnum::Minus | TokenEnum::Multiply | TokenEnum::Divide => {
-                let requirement = match binary_expr.operation.kind {
-                    TokenEnum::Plus {..} => GenericRequirement::Addition(right_type.clone()),
-                    TokenEnum::Minus {..} => GenericRequirement::Subtraction(right_type.clone()),
-                    TokenEnum::Multiply {..} => GenericRequirement::Multiplication(right_type.clone()),
-                    TokenEnum::Divide {..} => GenericRequirement::Division(right_type.clone()),
-                    _ => unreachable!("")
-                };
-                if let Err(_) = left_type.require(requirement.clone(), &mut self.all_generics) {
-                    error_tracker.add_error(Error::from_span(
-                        binary_expr.get_span(),
-                        format!("Type: {} does not support {}", left_type.to_string(&self.all_generics), requirement.to_string(&self.all_generics)),
-                        ErrorKind::TypeCheckError
-                    ));
-                };
-                /*
-                // Check for equality of left and right hand types
-                if !left_type.expect_to_be(&right_type, &mut self.all_generics) {
-                    error_tracker.add_error(Error::from_span(
-                        binary_expr.get_span(),
-                        format!("Incompatible types: {:?} and {:?} ", left_type, right_type),
-                        ErrorKind::TypeCheckError
-                    ));
-                    return self.unknown();
-                }*/
+                self.binary_require_both(&left_type, &right_type, binary_expr, error_tracker);
                 left_type
             },
             _ => unreachable!()
+        }
+    }
+
+    fn check_unary_expression(&mut self, unary_expression: &UnaryExpression,  current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Type {
+        let t = self.check_types_recursive(&unary_expression.expression, current_scope_id, error_tracker);
+        match unary_expression.operation.kind {
+            TokenEnum::Not => {
+                if t.require(GenericRequirement::BooleanNegation, &mut self.all_generics).is_err() {
+                    error_tracker.add_error(Error::from_span(
+                        unary_expression.expression.get_span(),
+                        format!("Not operation is not supported on type: {}", t.to_string(&self.all_generics)),
+                        ErrorKind::TypeCheckError
+                    ));
+                }
+               Type::Boolean
+            },
+            TokenEnum::Minus => {
+                if t.require(GenericRequirement::Negation, &mut self.all_generics).is_err() {
+                    error_tracker.add_error(Error::from_span(
+                        unary_expression.expression.get_span(),
+                        format!("Inversion is not supported on type: {}", t.to_string(&self.all_generics)),
+                        ErrorKind::TypeCheckError
+                    ));
+                }
+                t
+            },
+            TokenEnum::Plus => t,
+            _ => unreachable!("Invalid unary expression operator")
         }
     }
 
@@ -391,8 +444,8 @@ impl TypeChecker {
             Node::BinaryExpression(binary_expression) => {
                 return self.check_binary_expression(binary_expression, current_scope_id, error_tracker);
             },
-            Node::UnaryExpression(UnaryExpression { expression, .. }) => {
-                return self.check_types_recursive(expression, current_scope_id, error_tracker);
+            Node::UnaryExpression(unary_expression) => {
+                return self.check_unary_expression(unary_expression, current_scope_id, error_tracker);
             }
             Node::LiteralExpression(token) => {
                 return self.check_literal_expression(token);
@@ -517,6 +570,7 @@ impl TypeChecker {
     pub fn check_types(&mut self, node: &Node, error_tracker : &mut ErrorTracker) {
         let root_scope_id = self.all_scopes.insert(Scope::new(None));
         self.check_types_recursive(node, root_scope_id, error_tracker);
+        //println!("{:#?}", self.all_generics);
     }
 
 }

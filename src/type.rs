@@ -98,14 +98,16 @@ pub(crate) enum GenericRequirement {
     Addition(Type),
     Subtraction(Type),
     Multiplication(Type),
-    Division(Type)
+    Division(Type),
+    BooleanNegation,
+    Negation
 }
 
 impl GenericRequirement {
 
     pub fn does_fulfill(&self, t: &Type, all_generics: &mut AllGenerics) -> bool {
         let b = match (self, t) {
-            (_, Type::Object | Type::Generic(_)) => true,
+            (_, Type::Generic(_)) => true,
             (_, Type::Union(types)) => {
                 types.iter().all(|t| self.does_fulfill(t, all_generics))
             },
@@ -119,10 +121,14 @@ impl GenericRequirement {
             }
             (Self::Index(None), Type::String) => true,
             (Self::Index(Some(inner_generic_id)), Type::String) => {
-                let inner_reqs = &all_generics.get(inner_generic_id).requirements;
-                !inner_reqs.iter()
-                    .any(|req| matches!(req, GenericRequirement::Subtraction(_) | GenericRequirement::Division(_) | GenericRequirement::Multiplication(_) | GenericRequirement::Index(_)))
+                let mut generic = Default::default();
+                std::mem::swap(&mut generic, all_generics.get_mut(inner_generic_id));
+                let r = generic.ensure_fulfills(&Type::String, all_generics); // TODO: Maybe change to Char type (when that exists)
+                std::mem::swap(&mut generic, all_generics.get_mut(inner_generic_id));
+                r
             },
+            (Self::BooleanNegation, Type::Boolean) => true,
+            (Self::Negation, Type::Integer | Type::Float) => true,
             (
                 Self::Equality(with)
                 | Self::Addition(with)
@@ -130,7 +136,9 @@ impl GenericRequirement {
                 | Self::Multiplication(with)
                 | Self::Division(with)
                 , _
-            ) => t.expect_to_be(with, all_generics),
+            ) => {
+                t.expect_to_be(with, all_generics)
+            },
             _ => false
         };
         b
@@ -169,6 +177,8 @@ impl GenericRequirement {
             GenericRequirement::Subtraction(with) => format!("Subtraction with {:?}", with),
             GenericRequirement::Multiplication(with) => format!("Multiplication with {:?}", with),
             GenericRequirement::Division(with) => format!("Division with {:?}", with),
+            GenericRequirement::Negation => "Negation".to_string(),
+            GenericRequirement::BooleanNegation => "Logical NOT".to_string(),
         }
     }
 
@@ -180,7 +190,6 @@ pub(crate) enum Type {
     Float,
     String,
     Boolean,
-    Object,
     Range,
     Lambda(Box<Function>),
     Tuple(Vec<Type>),
@@ -196,8 +205,7 @@ impl Type {
         match self {
             Type::String => Some(self),
             Type::Array(inner) => Some(inner.as_mut()),
-            //Type::Union(t) | Type::Tuple(t) => t.iter_mut().collect(),
-            Type::Object | Type::Generic {..} => Some(self),
+           Type::Generic {..} => Some(self),
             _ => None
         }
     }
@@ -226,7 +234,6 @@ impl Type {
                     inner_generic
                 })
             },
-            Type::Object => Some(Type::Object),
             Type::Range => Some(Type::Integer),
             Type::Tuple(types) => unimplemented!(),
             Type::Array(inner) => Some(*inner),
@@ -243,12 +250,16 @@ impl Type {
             std::mem::swap(&mut generic, all_generics.get_mut(id));
             return r;
         }
-        if let Type::Generic(_) = self {
-            return false;
+        if let Type::Generic(id) = self {
+            let mut generic = Default::default();
+            std::mem::swap(&mut generic, all_generics.get_mut(id));
+            let r = generic.ensure_fulfills(expected, all_generics);
+            std::mem::swap(&mut generic, all_generics.get_mut(id));
+            return r;
         }
 
         match (expected, self) {
-            (Type::Object | Type::Generic {..}, _) => true,
+            (Type::Generic {..}, _) => true,
             (Type::Integer, Type::Integer) => true,
             (Type::Float, Type::Float) => true,
             (Type::String, Type::String) => true,
@@ -325,7 +336,6 @@ impl Type {
             Type::Float => "Float".to_string(),
             Type::String => "String".to_string(),
             Type::Boolean => "Boolean".to_string(),
-            Type::Object => "Object".to_string(),
             Type::Range => "Range".to_string(),
             Type::Lambda(func) => format!(
                 "Lambda ({}) -> {}",

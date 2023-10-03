@@ -39,18 +39,26 @@ impl CodeGenerator {
         }
     }
 
-    fn generate_base_function_code(&mut self, anonymous_function_expression: &BaseFunctionExpression, indent_level: usize) {
+    fn generate_base_function_code(&mut self, anonymous_function_expression: &BaseFunctionExpression, generic_parameters: &Option<GenericParameters>, indent_level: usize) {
         let BaseFunctionExpression {parameters, return_type, body, ..} = anonymous_function_expression;
         self.add_with_indent("(", indent_level);
+        let generic_types = if let Some(generic_parameters) = generic_parameters {
+            generic_parameters.parameters.iter().map(|generic_parm| {
+                let TokenEnum::Identifier(generic_type_name) = &generic_parm.type_name.kind else {unreachable!()};
+                generic_type_name
+            }).collect()
+        } else {vec![]};
         for parameter in parameters {
             let TokenEnum::Identifier(parameter_name) = &parameter.name.kind else {unreachable!()};
             let TokenEnum::Identifier(parameter_type) = &parameter.parameter_type.type_name.kind else {unreachable!()};
+            let parameter_type = if generic_types.contains(&parameter_type) { "Obj" } else {parameter_type};
             self.add_with_indent(&format!("{} :{}, ", parameter_name, parameter_type), indent_level);
         }
         self.code.pop(); // Removes unnecessary trailing ' '
         self.code.pop(); // Removes unnecessary trailing ','
         if let Some(return_type) = return_type {
             let TokenEnum::Identifier(return_type_ident) = &return_type.return_type.type_name.kind else {unreachable!()};
+            let return_type_ident = if generic_types.contains(&return_type_ident) { "Obj" } else {return_type_ident};
             self.add_with_indent(&format!(" -> :{}", return_type_ident), indent_level);
         };
         self.add_with_indent(") ", indent_level);
@@ -189,11 +197,11 @@ impl CodeGenerator {
                 let TokenEnum::Identifier(name_ident) = &name.kind else {unreachable!()};
                 let name_ident = replace_function_ident(name_ident);
                 self.add_with_indent(&format!(":{}", name_ident), indent_level);
-                self.generate_base_function_code(base, indent_level);
+                self.generate_base_function_code(base, generic_parameters, indent_level);
                 self.add_with_indent(" fun\n\n", indent_level);
             }
             Node::AnonymousFunctionExpression(base) => {
-                self.generate_base_function_code(base, indent_level);
+                self.generate_base_function_code(base, &None, indent_level);
                 self.add_with_indent(" lam\n", indent_level);
             }
             Node::WhileExpression(WhileExpression {condition, body , ..}) => {
