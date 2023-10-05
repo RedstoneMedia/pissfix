@@ -15,6 +15,7 @@ fun map<T>(over: T, f: Lam) -> T {
     for i in 0..length(over) {
         v = over[i]
         over[i] = f(v)
+        f(v)
     }
     over
 }
