@@ -2,7 +2,7 @@ use crate::errors::{Error, ErrorKind, ErrorTracker};
 use crate::{GetSpan, Span};
 use crate::node::Node;
 use crate::node::prelude::*;
-use crate::r#type::{AllGenerics, Generic, GenericRequirement, Type};
+use crate::r#type::{AllUnknown, Generic, GenericRequirement, Type};
 use crate::scope::{AllScopes, Function, Scope};
 use crate::token::TokenEnum;
 
@@ -10,23 +10,24 @@ use crate::token::TokenEnum;
 #[derive(Debug, Default)]
 pub struct TypeChecker {
     all_scopes: AllScopes,
-    all_generics: AllGenerics,
+    all_unknown: AllUnknown,
     function_recursive_calls_check_stack: Vec<(String, Vec<(CallExpression, Vec<Type>)>)>
 }
 
 impl TypeChecker {
 
     fn unknown(&mut self) -> Type {
-        Generic::new("".to_string(), None, &mut self.all_generics)
+        Generic::new("".to_string(), None, &mut self.all_unknown)
     }
 
-    fn check_type_expression(&mut self, type_expression: &TypeExpression, generic_types: &Vec<u64>, error_tracker: &mut ErrorTracker) -> Type {
+    fn check_type_expression(&mut self, type_expression: &TypeExpression, generic_types: &Vec<Type>, error_tracker: &mut ErrorTracker) -> Type {
         let TokenEnum::Identifier(type_name) = &type_expression.type_name.kind else {unreachable!()};
-        if let Some(id) = generic_types.iter().find(|id| {
-            let generic = self.all_generics.get(id);
+        if let Some(ref_type) = generic_types.iter().find(|t| {
+            let Type::Reference(id) = t else {unreachable!("Has to be generic reference")};
+            let Type::Generic(generic) = self.all_unknown.get(id) else {unreachable!("Has to be generic reference")};
             &generic.name == type_name
         }) {
-            return Type::Generic(*id);
+            return ref_type.clone();
         }
         match type_name.as_ref() {
             "Int" => Type::Integer,
@@ -75,7 +76,7 @@ impl TypeChecker {
         let generic_types = function_expr.generic_parameters.as_ref().map(|g| g.parameters.iter()
             .map(|ty_expr| {
                 let TokenEnum::Identifier(generic_name) = &ty_expr.type_name.kind else {unreachable!()};
-                self.all_generics.insert(Generic { name: generic_name.clone(), requirements: vec![] })
+                Generic::new(generic_name.clone(), None, &mut self.all_unknown)
             })
             .collect()
         ).unwrap_or(vec![]);
@@ -89,12 +90,12 @@ impl TypeChecker {
         let (_, unchecked_recursive_calls) = self.function_recursive_calls_check_stack.pop().unwrap();
         // Check out function return type
         let function = self.all_scopes.get_mut(&current_scope_id).functions.get_mut(function_name).unwrap();
-        if !actual_return_type.expect_to_be(&function.returns, &mut self.all_generics) {
+        if !actual_return_type.expect_to_be(&function.returns, &mut self.all_unknown) {
             error_tracker.add_error(Error::from_span(
                 function_expr.base.return_type.as_ref()
                          .map(|return_type|return_type.return_type.get_span())
                          .unwrap_or(function_expr.name.get_span()),
-                format!("Function returns type: {}, but actually has type: {}", function.returns.to_string(&self.all_generics), actual_return_type.to_string(&self.all_generics)),
+                format!("Function returns type: {}, but actually has type: {}", function.returns.to_string(&self.all_unknown), actual_return_type.to_string(&self.all_unknown)),
                 ErrorKind::TypeCheckError
             ));
             return;
@@ -107,7 +108,7 @@ impl TypeChecker {
         }
     }
 
-    fn half_check_base_function_expression(&mut self, base_function_exp: &BaseFunctionExpression, generic_types: &Vec<u64>, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Function {
+    fn half_check_base_function_expression(&mut self, base_function_exp: &BaseFunctionExpression, generic_types: &Vec<Type>, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Function {
         let parameters : Vec<_> = base_function_exp.parameters.iter().map(|FunctionParameter { name, parameter_type, .. }| {
             let TokenEnum::Identifier(name) = &name.kind else {unreachable!()};
             let t = self.check_type_expression(parameter_type, generic_types, error_tracker);
@@ -136,7 +137,7 @@ impl TypeChecker {
         // Check out function return type
         let actual_return_type = self.check_types_recursive(&base_function_exp.body, function.scope_id, error_tracker);
         // TODO: expect_to_be is not correct here
-        if !actual_return_type.expect_to_be(&function.returns, &mut self.all_generics) {
+        if !actual_return_type.expect_to_be(&function.returns, &mut self.all_unknown) {
             error_tracker.add_error(Error::from_span(
                 base_function_exp.return_type.as_ref()
                     .map(|return_type|return_type.return_type.get_span())
@@ -144,7 +145,7 @@ impl TypeChecker {
                         start_char: base_function_exp.opening_parenthesis.span.start_char,
                         end_char: base_function_exp.closing_parenthesis.span.end_char
                     }),
-                format!("Function returns type: {}, but actually has type: {}", function.returns.to_string(&self.all_generics), actual_return_type.to_string(&self.all_generics)),
+                format!("Function returns type: {}, but actually has type: {}", function.returns.to_string(&self.all_unknown), actual_return_type.to_string(&self.all_unknown)),
                 ErrorKind::TypeCheckError
             ));
         }
@@ -162,10 +163,10 @@ impl TypeChecker {
                 let insert_scope_variables = &mut self.all_scopes.get_mut(&current_scope_id).variables;
                 match insert_scope_variables.insert(identifier_string.clone(), expr_type.clone()) {
                     Some(t) => {
-                        if !t.expect_to_be(&expr_type, &mut self.all_generics) {
+                        if !t.expect_to_be(&expr_type, &mut self.all_unknown) {
                             error_tracker.add_error(Error::from_span(
                                 assignment_expr.get_span(),
-                                format!("Cannot assign {} to variable of type {}", expr_type.to_string(&self.all_generics), t.to_string(&self.all_generics)),
+                                format!("Cannot assign {} to variable of type {}", expr_type.to_string(&self.all_unknown), t.to_string(&self.all_unknown)),
                                 ErrorKind::TypeCheckError
                             ));
                         }
@@ -201,10 +202,10 @@ impl TypeChecker {
                     inner_set_type = t;
                 }
                 // Check (and possibly collapse) inner variable type
-                if !inner_set_type.expect_to_be(&expr_type, &mut self.all_generics) {
+                if !inner_set_type.expect_to_be(&expr_type, &mut self.all_unknown) {
                     error_tracker.add_error(Error::from_span(
                         assignment_expr.value.get_span(),
-                        format!("Cannot assign {} to variable of type {}", expr_type.to_string(&self.all_generics), inner_set_type.to_string(&self.all_generics)),
+                        format!("Cannot assign {} to variable of type {}", expr_type.to_string(&self.all_unknown), inner_set_type.to_string(&self.all_unknown)),
                         ErrorKind::TypeCheckError
                     ));
                 }
@@ -215,10 +216,10 @@ impl TypeChecker {
 
     fn check_call_expression_argument_validity(&mut self, call_expr: &CallExpression, parameters: &Vec<(String, Type)>, arguments: &Vec<Type>, error_tracker : &mut ErrorTracker) {
         for ((_, expected), actual) in parameters.iter().zip(arguments.iter()) {
-            if !actual.expect_to_be(expected, &mut self.all_generics) {
+            if !actual.expect_to_be(expected, &mut self.all_unknown) {
                 error_tracker.add_error(Error::from_span(
                     call_expr.get_span(),
-                    format!("Function argument type does not match, expected: {}, but got: {}", expected.to_string(&self.all_generics), actual.to_string(&self.all_generics)),
+                    format!("Function argument type does not match, expected: {}, but got: {}", expected.to_string(&self.all_unknown), actual.to_string(&self.all_unknown)),
                     ErrorKind::TypeCheckError
                 ));
             }
@@ -329,24 +330,24 @@ impl TypeChecker {
             _ => unreachable!("Not a binary operator token: {:?}", binary_expr.operation.kind)
         };
 
-        if let Err(_) = left.require(left_requirement.clone(), &mut self.all_generics) {
+        if let Err(_) = left.require(left_requirement.clone(), &mut self.all_unknown) {
             error_tracker.add_error(Error::from_span(
                 binary_expr.left.get_span(),
-                format!("Type: {} does not support {}", left.to_string(&self.all_generics), left_requirement.to_string(&self.all_generics)),
+                format!("Type: {} does not support {}", left.to_string(&self.all_unknown), left_requirement.to_string(&self.all_unknown)),
                 ErrorKind::TypeCheckError
             ));
         };
-        if let Err(_) = right.require(right_requirement.clone(), &mut self.all_generics) {
+        if let Err(_) = right.require(right_requirement.clone(), &mut self.all_unknown) {
             error_tracker.add_error(Error::from_span(
                 binary_expr.right.get_span(),
-                format!("Type: {} does not support {}", right.to_string(&self.all_generics), right_requirement.to_string(&self.all_generics)),
+                format!("Type: {} does not support {}", right.to_string(&self.all_unknown), right_requirement.to_string(&self.all_unknown)),
                 ErrorKind::TypeCheckError
             ));
         };
-        if !left.expect_to_be(&right, &mut self.all_generics) {
+        if !left.expect_to_be(&right, &mut self.all_unknown) {
             error_tracker.add_error(Error::from_span(
                 binary_expr.get_span(),
-                format!("Left and right hand side types are not the same: {} and {}", left.to_string(&self.all_generics), right.to_string(&self.all_generics)),
+                format!("Left and right hand side types are not the same: {} and {}", left.to_string(&self.all_unknown), right.to_string(&self.all_unknown)),
                 ErrorKind::TypeCheckError
             ));
         }
@@ -358,10 +359,10 @@ impl TypeChecker {
 
         match &binary_expr.operation.kind {
             TokenEnum::Range(_) => {
-                if !left_type.expect_to_be(&Type::Integer, &mut self.all_generics) {
+                if !left_type.expect_to_be(&Type::Integer, &mut self.all_unknown) {
                     error_tracker.add_error(Error::from_span(
                         binary_expr.get_span(),
-                        format!("Found non integer types for range: {} and {}", left_type.to_string(&self.all_generics), right_type.to_string(&self.all_generics)),
+                        format!("Found non integer types for range: {} and {}", left_type.to_string(&self.all_unknown), right_type.to_string(&self.all_unknown)),
                         ErrorKind::TypeCheckError
                     ));
                 }
@@ -372,7 +373,7 @@ impl TypeChecker {
                 (_, _) => {
                     error_tracker.add_error(Error::from_span(
                         binary_expr.get_span(),
-                        format!("Incompatible types for boolean math: {} and {} ", left_type.to_string(&self.all_generics), right_type.to_string(&self.all_generics)),
+                        format!("Incompatible types for boolean math: {} and {} ", left_type.to_string(&self.all_unknown), right_type.to_string(&self.all_unknown)),
                         ErrorKind::TypeCheckError
                     ));
                     Type::Boolean
@@ -394,20 +395,20 @@ impl TypeChecker {
         let t = self.check_types_recursive(&unary_expression.expression, current_scope_id, error_tracker);
         match unary_expression.operation.kind {
             TokenEnum::Not => {
-                if t.require(GenericRequirement::BooleanNegation, &mut self.all_generics).is_err() {
+                if t.require(GenericRequirement::BooleanNegation, &mut self.all_unknown).is_err() {
                     error_tracker.add_error(Error::from_span(
                         unary_expression.expression.get_span(),
-                        format!("Not operation is not supported on type: {}", t.to_string(&self.all_generics)),
+                        format!("Not operation is not supported on type: {}", t.to_string(&self.all_unknown)),
                         ErrorKind::TypeCheckError
                     ));
                 }
                Type::Boolean
             },
             TokenEnum::Minus => {
-                if t.require(GenericRequirement::Negation, &mut self.all_generics).is_err() {
+                if t.require(GenericRequirement::Negation, &mut self.all_unknown).is_err() {
                     error_tracker.add_error(Error::from_span(
                         unary_expression.expression.get_span(),
-                        format!("Inversion is not supported on type: {}", t.to_string(&self.all_generics)),
+                        format!("Inversion is not supported on type: {}", t.to_string(&self.all_unknown)),
                         ErrorKind::TypeCheckError
                     ));
                 }
@@ -420,23 +421,23 @@ impl TypeChecker {
 
     fn check_index_expression(&mut self, index_expression: &IndexExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Type {
         let index_type = self.check_types_recursive(&index_expression.index_value, current_scope_id, error_tracker);
-        if !index_type.expect_to_be(&Type::Integer, &mut self.all_generics) {
+        if !index_type.expect_to_be(&Type::Integer, &mut self.all_unknown) {
             error_tracker.add_error(Error::from_span(
                 index_expression.index_value.get_span(),
-                format!("Indices can only be of type Integer, but got: {}", index_type.to_string(&self.all_generics)),
+                format!("Indices can only be of type Integer, but got: {}", index_type.to_string(&self.all_unknown)),
                 ErrorKind::TypeCheckError
             ));
         }
         let into_type = self.check_types_recursive(&index_expression.index_into, current_scope_id, error_tracker);
-        if let Err(_) = into_type.require(GenericRequirement::Index(None), &mut self.all_generics) {
+        if let Err(_) = into_type.require(GenericRequirement::Index(None), &mut self.all_unknown) {
             error_tracker.add_error(Error::from_span(
                 index_expression.index_into.get_span(),
-                format!("Type: {} does not support indexing", into_type.to_string(&self.all_generics)),
+                format!("Type: {} does not support indexing", into_type.to_string(&self.all_unknown)),
                 ErrorKind::TypeCheckError
             ));
             return self.unknown();
         };
-        into_type.clone().try_into_iter_inner(&mut self.all_generics).unwrap()
+        into_type.clone().try_into_iter_inner(&mut self.all_unknown).unwrap()
     }
 
     fn check_types_recursive(&mut self, node: &Node, current_scope_id: u64, error_tracker : &mut ErrorTracker) -> Type {
@@ -466,10 +467,10 @@ impl TypeChecker {
                 let mut last_type = self.unknown();
                 for expr in expressions {
                     let t = self.check_types_recursive(expr, current_scope_id, error_tracker);
-                    if !t.expect_to_be(&last_type, &mut self.all_generics) {
+                    if !t.expect_to_be(&last_type, &mut self.all_unknown) {
                         error_tracker.add_error(Error::from_span(
                             expr.get_span(),
-                            format!("Expr type does not match array type, got: {}, but should be: {}", t.to_string(&self.all_generics), last_type.to_string(&self.all_generics)),
+                            format!("Expr type does not match array type, got: {}, but should be: {}", t.to_string(&self.all_unknown), last_type.to_string(&self.all_unknown)),
                             ErrorKind::TypeCheckError
                         ));
                     }
@@ -493,20 +494,20 @@ impl TypeChecker {
             }
             Node::IfExpression(IfExpression { keyword, condition, true_branch, false_branch, .. }) => {
                 let condition_type = self.check_types_recursive(condition, current_scope_id, error_tracker);
-                if !condition_type.expect_to_be(&Type::Boolean, &mut self.all_generics) {
+                if !condition_type.expect_to_be(&Type::Boolean, &mut self.all_unknown) {
                     error_tracker.add_error(Error::from_span(
                         condition.get_span(),
-                        format!("If condition has to be of type Boolean, but got: {}", condition_type.to_string(&self.all_generics)),
+                        format!("If condition has to be of type Boolean, but got: {}", condition_type.to_string(&self.all_unknown)),
                         ErrorKind::TypeCheckError
                     ));
                 }
                 let true_branch_type = self.check_types_recursive(true_branch, current_scope_id, error_tracker);
                 if let Some(false_branch) = false_branch {
                     let false_branch_type = self.check_types_recursive(false_branch, current_scope_id, error_tracker);
-                    if !true_branch_type.expect_to_be(&false_branch_type, &mut self.all_generics) {
+                    if !true_branch_type.expect_to_be(&false_branch_type, &mut self.all_unknown) {
                         error_tracker.add_error(Error::from_span(
                             keyword.get_span(),
-                            format!("Branch values mismatch: {} and {}", true_branch_type.to_string(&self.all_generics), false_branch_type.to_string(&self.all_generics)),
+                            format!("Branch values mismatch: {} and {}", true_branch_type.to_string(&self.all_unknown), false_branch_type.to_string(&self.all_unknown)),
                             ErrorKind::TypeCheckError
                         ));
                     }
@@ -521,10 +522,10 @@ impl TypeChecker {
             }
             Node::WhileExpression(WhileExpression { condition, body, .. }) => {
                 let condition_type = self.check_types_recursive(condition, current_scope_id, error_tracker);
-                if !condition_type.expect_to_be(&Type::Boolean, &mut self.all_generics) {
+                if !condition_type.expect_to_be(&Type::Boolean, &mut self.all_unknown) {
                     error_tracker.add_error(Error::from_span(
                         condition.get_span(),
-                        format!("While condition has to be of type Boolean, but got: {}", condition_type.to_string(&self.all_generics)),
+                        format!("While condition has to be of type Boolean, but got: {}", condition_type.to_string(&self.all_unknown)),
                         ErrorKind::TypeCheckError
                     ));
                 }
@@ -532,10 +533,10 @@ impl TypeChecker {
             }
             Node::ForExpression(ForExpression { iteration_var, iterate_over, body , ..}) => {
                 let iterate_over_type = self.check_types_recursive(iterate_over, current_scope_id, error_tracker);
-                let iteration_type = if let Some(it) = iterate_over_type.clone().try_into_iter_inner(&mut self.all_generics) {it} else {
+                let iteration_type = if let Some(it) = iterate_over_type.clone().try_into_iter_inner(&mut self.all_unknown) {it} else {
                     error_tracker.add_error(Error::from_span(
                         iterate_over.get_span(),
-                        format!("Can only iterate over String, or Array, but got: {}", iterate_over_type.to_string(&self.all_generics)),
+                        format!("Can only iterate over String, or Array, but got: {}", iterate_over_type.to_string(&self.all_unknown)),
                         ErrorKind::TypeCheckError
                     ));
                     self.unknown()
