@@ -175,39 +175,22 @@ impl TypeChecker {
                 }
             },
             Node::IndexExpression(index_expression) => {
-                self.check_index_expression(index_expression, current_scope_id, error_tracker);
-                // Walk down until hitting inevitable identifier expr
-                let mut current_expression = &index_expression.index_into;
-                let mut depth = 1;
-                while let Node::IndexExpression(IndexExpression { index_into: inner_index_into, ..}) = current_expression.as_ref() {
-                    current_expression = inner_index_into;
-                    depth += 1;
-                }
-                let Node::IdentifierExpression(Token {kind: TokenEnum::Identifier(identifier_string), ..}) = current_expression.as_ref() else {panic!()};
-                // Get variable type of found identifier expr
-                let insert_scope_variables = &mut self.all_scopes.get_mut(&current_scope_id).variables;
-                let Some(var) = insert_scope_variables.get_mut(identifier_string) else {unreachable!("Variable has to exist, because index expression has been checked")};
-                // Get &mut inner type at correct depth
-                let mut inner_set_type = var;
-                for _ in 0..depth {
-                    let Some(t) = inner_set_type.try_into_inner_mut(&mut self.all_references) else {
-                        error_tracker.add_error(Error::from_span(
-                            assignment_expr.get_span(),
-                            format!("Oops"),
-                            ErrorKind::TypeCheckError
-                        ));
-                        return;
-                    };
-                    inner_set_type = t;
-                }
+                let inner_type = self.check_index_expression(index_expression, current_scope_id, error_tracker);
                 // Check inner variable type
-                if !inner_set_type.expect_to_be(&expr_type, &mut self.all_references, false) {
+                if !inner_type.expect_to_be(&expr_type, &mut self.all_references, false) {
                     error_tracker.add_error(Error::from_span(
                         assignment_expr.value.get_span(),
-                        format!("Cannot assign {} to variable of type {}", expr_type.to_string(&self.all_references), inner_set_type.to_string(&self.all_references)),
+                        format!(
+                                "Cannot assign {} to variable of type {}",
+                                expr_type.to_string(&self.all_references),
+                                inner_type.to_string(&self.all_references)
+                        ),
                         ErrorKind::TypeCheckError
                     ));
+                    return;
                 }
+                let Type::Reference(inner_id) = inner_type else {unreachable!("Inner array type has to be after Reference")};
+                self.all_references.types.insert(inner_id, expr_type);
             }
             v => eprintln!("Warning: Cannot assign to expression: {:?}", v)
         }
@@ -474,7 +457,12 @@ impl TypeChecker {
                     }
                     last_type = t;
                 }
-                return Type::Array(Box::new(last_type));
+                let inner_id = if let Type::Reference(ref_id) = last_type {
+                    ref_id
+                } else {
+                    self.all_references.insert(last_type)
+                };
+                return Type::Array(inner_id);
             }
             Node::ExpressionList(ExpressionList { expressions, .. }) => {
                 let mut return_types = Vec::with_capacity(expressions.len());

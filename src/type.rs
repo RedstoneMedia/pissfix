@@ -4,15 +4,15 @@ use crate::scope::Function;
 /// Holds all types that were Unknown at one point All references
 #[derive(Debug, Clone, Default)]
 pub(crate) struct AllReferences {
-    types: HashMap<u64, Type>,
+    pub(crate) types: HashMap<u64, Type>,
     count: u64
 }
 
 impl AllReferences {
 
-    pub(crate) fn insert(&mut self, generic : Type) -> u64 {
+    pub(crate) fn insert(&mut self, t: Type) -> u64 {
         let new_index = self.count;
-        self.types.insert(new_index, generic);
+        self.types.insert(new_index, t);
         self.count += 1;
         new_index
     }
@@ -176,9 +176,9 @@ impl TypeRequirement {
                 let mut ref_type = Default::default();
                 std::mem::swap(&mut ref_type, all_references.get_mut(inner_ref_id));
                 let r = if let Type::Generic(inner_generic) = &mut ref_type {
-                    inner_generic.ensure_fulfills(inner, all_references, in_fn_call)
+                    inner_generic.ensure_fulfills(&Type::Reference(*inner), all_references, in_fn_call)
                 } else {
-                    ref_type.expect_to_be(inner, all_references, in_fn_call)
+                    ref_type.expect_to_be(&Type::Reference(*inner), all_references, in_fn_call)
                 };
                 std::mem::swap(&mut ref_type, all_references.get_mut(inner_ref_id));
                 r
@@ -248,32 +248,21 @@ pub(crate) enum Type {
     Integer,
     Float,
     String,
-    #[default]
     Boolean,
     Range,
     Lambda(Box<Function>),
     Tuple(Vec<Type>),
-    Array(Box<Type>),
+    Array(u64),
     Union(Vec<Type>),
     Reference(u64),
     // These types should *always* be behind a Reference Type
     Generic(Box<Generic>),
     Unknown(Box<TypeRequirements>),
-    //#[default]
+    #[default]
     _None  // Only internally used
 }
 
 impl Type {
-
-    pub(crate) fn try_into_inner_mut(&mut self, all_references: &mut AllReferences) -> Option<&mut Self> {
-        match self {
-            Type::String => Some(self),
-            Type::Array(inner) => Some(inner.as_mut()),
-            //Type::Reference(_) => unimplemented!(),
-            Type::Generic {..} => Some(self),
-            _ => None
-        }
-    }
 
     pub(crate) fn try_into_iter_inner(&self, all_references: &AllReferences) -> Option<Self> {
         match self {
@@ -290,7 +279,7 @@ impl Type {
             },
             Type::Range => Some(Type::Integer),
             Type::Tuple(types) => unimplemented!(),
-            Type::Array(inner) => Some(*inner.clone()),
+            Type::Array(inner_id) => Some(Type::Reference(*inner_id)),
             Type::Union(types) => unimplemented!(),
             _ => None
         }
@@ -303,12 +292,10 @@ impl Type {
             (Type::Reference(actual_ref_id), Type::Generic(generic)) => {
                 assert_ne!(actual_ref_id, expected_type_id);
                 let actual_ref_type = all_references.get(actual_ref_id);
-                if let Type::Generic(_) = actual_ref_type {
-                    generic.ensure_fulfills(self, all_references, in_fn_call) // Expect to be on generics only legal, if other type is a generic too (Except in function calls)
-                } else if in_fn_call {
-                    generic.ensure_fulfills(self, all_references, in_fn_call)
-                } else {
-                    false
+                match actual_ref_type {
+                    Type::Generic(_) | Type::Unknown(_) => generic.ensure_fulfills(self, all_references, in_fn_call),
+                    _ if in_fn_call => generic.ensure_fulfills(self, all_references, in_fn_call),
+                    _ => false,
                 }
             },
             (Type::Reference(actual_ref_id), Type::Unknown(requirements)) => {
@@ -387,7 +374,7 @@ impl Type {
                 }
             }
             (Type::Array(inner_expected), Type::Array(inner_actual)) => {
-                inner_actual.expect_to_be(inner_expected, all_references, in_fn_call)
+                Type::Reference(*inner_actual).expect_to_be(&Type::Reference(*inner_expected), all_references, in_fn_call)
             }
             (expected, Type::Union(types_actual)) => {
                 let mut types_expected = Vec::new();
@@ -452,7 +439,9 @@ impl Type {
                 .map(|t| t.to_string(all_references))
                 .collect::<Vec<_>>()
                 .join(", ")),
-            Type::Array(inner) => format!("Array<{}>", inner.to_string(all_references)),
+            Type::Array(inner) => format!("Array<{}>", all_references
+                .get(inner)
+                .to_string(all_references)),
             Type::Union(types) => types.iter()
                 .map(|t| t.to_string(all_references))
                 .collect::<Vec<_>>()
