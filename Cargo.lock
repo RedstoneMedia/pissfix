@@ -185,7 +185,7 @@ checksum = "1a9bad9f94746442c783ca431b22403b519cd7fbeed0533fdd6328b2f2212128"
 
 [[package]]
 name = "pissfix"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "clap_derive",

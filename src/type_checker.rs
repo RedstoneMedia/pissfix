@@ -81,7 +81,9 @@ impl TypeChecker {
         ).unwrap_or(vec![]);
         let function = self.half_check_base_function_expression(&function_expr.base, &generic_types, current_scope_id, error_tracker);
         let function_scope_id = function.scope_id;
-        self.all_scopes.get_mut(&current_scope_id).functions.insert(function_name.clone(), function);
+        self.all_scopes.get_mut(&current_scope_id)
+            .functions
+            .insert(function_name.clone(), function);
 
         // Check function body
         self.function_recursive_calls_check_stack.push((function_name.clone(), vec![]));
@@ -176,6 +178,15 @@ impl TypeChecker {
             },
             Node::IndexExpression(index_expression) => {
                 let inner_type = self.check_index_expression(index_expression, current_scope_id, error_tracker);
+                // Walk down until hitting inevitable identifier expr containing the name of the container variable
+                let mut current_expression = &index_expression.index_into;
+                while let Node::IndexExpression(IndexExpression { index_into: inner_index_into, ..}) = current_expression.as_ref() {
+                    current_expression = inner_index_into;
+                }
+                let Node::IdentifierExpression(Token {kind: TokenEnum::Identifier(var_name), ..}) = current_expression.as_ref() else {panic!()};
+                // Get variable type of found identifier expr
+                let insert_scope_variables = &mut self.all_scopes.get_mut(&current_scope_id).variables;
+                let Some(container_type) = insert_scope_variables.get_mut(var_name) else {unreachable!("Variable has to exist, because index expression has been checked")};
                 // Check inner variable type
                 if !inner_type.expect_to_be(&expr_type, &mut self.all_references, false) {
                     error_tracker.add_error(Error::from_span(
@@ -189,8 +200,13 @@ impl TypeChecker {
                     ));
                     return;
                 }
+
+                if let Type::String = container_type { return; } // String does not have a inner reference type which can be set
                 let Type::Reference(inner_id) = inner_type else {unreachable!("Inner array type has to be after Reference")};
-                self.all_references.types.insert(inner_id, expr_type);
+                match self.all_references.get(&inner_id) {
+                    Type::Generic(_) | Type::Unknown(_) => {}, // Type would already be changed (or not in case of generics)
+                    _ => {self.all_references.replace(inner_id, expr_type);}
+                }
             }
             v => eprintln!("Warning: Cannot assign to expression: {:?}", v)
         }
@@ -376,7 +392,7 @@ impl TypeChecker {
         let t = self.check_types_recursive(&unary_expression.expression, current_scope_id, error_tracker);
         match unary_expression.operation.kind {
             TokenEnum::Not => {
-                if t.require(TypeRequirement::BooleanNegation, &mut self.all_references, false).is_err() {
+                if !t.expect_to_be(&Type::Boolean, &mut self.all_references, false) {
                     error_tracker.add_error(Error::from_span(
                         unary_expression.expression.get_span(),
                         format!("Not operation is not supported on type: {}", t.to_string(&self.all_references)),
@@ -519,12 +535,16 @@ impl TypeChecker {
             }
             Node::ForExpression(ForExpression { iteration_var, iterate_over, body , ..}) => {
                 let iterate_over_type = self.check_types_recursive(iterate_over, current_scope_id, error_tracker);
-                let iteration_type = if let Some(it) = iterate_over_type.clone().try_into_iter_inner(&mut self.all_references) {it} else {
+                // Require Iteration
+                if iterate_over_type.require(TypeRequirement::Iteration(None), &mut self.all_references, false).is_err() {
                     error_tracker.add_error(Error::from_span(
                         iterate_over.get_span(),
                         format!("Can only iterate over String, or Array, but got: {}", iterate_over_type.to_string(&self.all_references)),
                         ErrorKind::TypeCheckError
                     ));
+                }
+                let iteration_type = if let Some(t) = iterate_over_type.clone().try_into_iter_inner(&mut self.all_references) {t} else {
+                    // Only happens when the require fails
                     self.unknown()
                 };
                 if let TokenEnum::Identifier(iteration_var_name) = &iteration_var.kind {
@@ -535,7 +555,9 @@ impl TypeChecker {
                             ErrorKind::TypeCheckError
                         ));
                     }
-                    self.all_scopes.get_mut(&current_scope_id).variables.insert(iteration_var_name.clone(), iteration_type);
+                    self.all_scopes.get_mut(&current_scope_id)
+                        .variables
+                        .insert(iteration_var_name.clone(), iteration_type);
                 }
                 return self.check_types_recursive(body, current_scope_id, error_tracker);
             }
@@ -557,7 +579,6 @@ impl TypeChecker {
     pub fn check_types(&mut self, node: &Node, error_tracker : &mut ErrorTracker) {
         let root_scope_id = self.all_scopes.insert(Scope::new(None));
         self.check_types_recursive(node, root_scope_id, error_tracker);
-        //println!("{:#?}", self.all_generics);
     }
 
 }

@@ -1,28 +1,29 @@
-use std::collections::HashMap;
 use crate::scope::Function;
 
 /// Holds all types that were Unknown at one point All references
+/// A reference type in here can *NEVER* be deleted
 #[derive(Debug, Clone, Default)]
 pub(crate) struct AllReferences {
-    pub(crate) types: HashMap<u64, Type>,
-    count: u64
+    types: Vec<Type>
 }
 
 impl AllReferences {
 
-    pub(crate) fn insert(&mut self, t: Type) -> u64 {
-        let new_index = self.count;
-        self.types.insert(new_index, t);
-        self.count += 1;
-        new_index
+    pub(crate) fn insert(&mut self, t: Type) -> usize {
+        self.types.push(t);
+        self.types.len() - 1
     }
 
-    pub(crate) fn get_mut(&mut self, index : &u64) -> &mut Type {
-        self.types.get_mut(index).expect(&format!("Unknown type does not exist with id : {}", index))
+    pub(crate) fn replace(&mut self, id: usize, new: Type) {
+        self.types[id] = new;
     }
 
-    pub(crate) fn get(&self, index : &u64) -> &Type {
-        self.types.get(index).expect(&format!("Unknown type does not exist with id : {}", index))
+    pub(crate) fn get_mut(&mut self, id: &usize) -> &mut Type {
+        self.types.get_mut(*id).expect(&format!("Reference does not exist with id : {}", id))
+    }
+
+    pub(crate) fn get(&self, id: &usize) -> &Type {
+        self.types.get(*id).expect(&format!("Reference does not exist with id : {}", id))
     }
 
 }
@@ -135,23 +136,24 @@ impl Generic {
 
 #[derive(Debug, Clone)]
 pub(crate) enum TypeRequirement {
-    Index(Option<u64>),
+    Iteration(Option<usize>),
+    Index(Option<usize>),
     Equality(Type),
     Addition(Type),
     Subtraction(Type),
     Multiplication(Type),
     Division(Type),
-    BooleanNegation,
     Negation
 }
 
 impl TypeRequirement {
 
     pub fn does_fulfill(&self, t: &Type, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
-        match (self, t) {
+        let r = match (self, t) {
             (_, Type::Reference(id)) => {
                 let mut ref_type = Default::default();
                 std::mem::swap(&mut ref_type, all_references.get_mut(id));
+
                 let r = match &mut ref_type {
                     Type::Generic(generic) => {
                         generic.require(self.clone(), all_references, in_fn_call);
@@ -171,8 +173,8 @@ impl TypeRequirement {
             (_, Type::Union(types)) => {
                 types.iter().all(|t| self.does_fulfill(t, all_references, in_fn_call))
             },
-            (Self::Index(None), Type::Array(_)) => true,
-            (Self::Index(Some(inner_ref_id)), Type::Array(inner)) => {
+            (Self::Index(None) | Self::Iteration(None), Type::Array(_)) => true,
+            (Self::Index(Some(inner_ref_id)) | Self::Iteration(Some(inner_ref_id)), Type::Array(inner)) => {
                 let mut ref_type = Default::default();
                 std::mem::swap(&mut ref_type, all_references.get_mut(inner_ref_id));
                 let r = if let Type::Generic(inner_generic) = &mut ref_type {
@@ -183,11 +185,15 @@ impl TypeRequirement {
                 std::mem::swap(&mut ref_type, all_references.get_mut(inner_ref_id));
                 r
             }
-            (Self::Index(None), Type::String) => true,
-            (Self::Index(Some(inner_ref_id)), Type::String) => {
+            (Self::Index(None) | Self::Iteration(None), Type::String) => true,
+            (Self::Index(Some(inner_ref_id)) | Self::Iteration(Some(inner_ref_id)), Type::String) => {
                 Type::Reference(*inner_ref_id).expect_to_be(&Type::String, all_references, in_fn_call) // TODO: Maybe change to Char type (when that exists)
             }
-            (Self::BooleanNegation, Type::Boolean) => true,
+            // Ranges can not be index only iterated over
+            (Self::Iteration(None), Type::Range) => true,
+            (Self::Iteration(Some(inner_ref_id)), Type::Range) => {
+                Type::Reference(*inner_ref_id).expect_to_be(&Type::Integer, all_references, in_fn_call)
+            },
             (Self::Negation, Type::Integer | Type::Float) => true,
             (
                 Self::Equality(with)
@@ -200,7 +206,8 @@ impl TypeRequirement {
                 t.expect_to_be(with, all_references, in_fn_call)
             },
             _ => false
-        }
+        };
+        r
     }
 
     fn eq(&self, other: &Self, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
@@ -223,21 +230,25 @@ impl TypeRequirement {
 
     pub(crate) fn to_string(&self, all_references: &AllReferences) -> String {
         match self {
-            TypeRequirement::Index(id) => {
+            TypeRequirement::Index(id) | TypeRequirement::Iteration(id) => {
+                let name = match self {
+                    TypeRequirement::Index(_) => "Indexing",
+                    TypeRequirement::Iteration(_) => "Iteration",
+                    _ => unreachable!()
+                };
                 if let Some(id) = id {
                     let generic = all_references.get(id);
-                    format!("Indexing with inner: [{}]", generic.to_string(all_references))
+                    format!("{} with inner: [{}]", name, generic.to_string(all_references))
                 } else {
-                    "Indexing".to_string()
+                    name.to_string()
                 }
             },
-            TypeRequirement::Equality(with) => format!("Equality with {:?}", with),
-            TypeRequirement::Addition(with) => format!("Addition with {:?}", with),
-            TypeRequirement::Subtraction(with) => format!("Subtraction with {:?}", with),
-            TypeRequirement::Multiplication(with) => format!("Multiplication with {:?}", with),
-            TypeRequirement::Division(with) => format!("Division with {:?}", with),
+            TypeRequirement::Equality(with) => format!("Equality with {}", with.to_string(all_references)),
+            TypeRequirement::Addition(with) => format!("Addition with {}", with.to_string(all_references)),
+            TypeRequirement::Subtraction(with) => format!("Subtraction with {}", with.to_string(all_references)),
+            TypeRequirement::Multiplication(with) => format!("Multiplication with {}", with.to_string(all_references)),
+            TypeRequirement::Division(with) => format!("Division with {}", with.to_string(all_references)),
             TypeRequirement::Negation => "Negation".to_string(),
-            TypeRequirement::BooleanNegation => "Logical NOT".to_string(),
         }
     }
 
@@ -252,9 +263,9 @@ pub(crate) enum Type {
     Range,
     Lambda(Box<Function>),
     Tuple(Vec<Type>),
-    Array(u64),
+    Array(usize),
     Union(Vec<Type>),
-    Reference(u64),
+    Reference(usize),
     // These types should *always* be behind a Reference Type
     Generic(Box<Generic>),
     Unknown(Box<TypeRequirements>),
@@ -285,7 +296,7 @@ impl Type {
         }
     }
 
-    fn ref_expect_to_be(&self, expected_type_id: &u64, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
+    fn ref_expect_to_be(&self, expected_type_id: &usize, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
         let mut ref_type = Default::default();
         std::mem::swap(&mut ref_type, all_references.get_mut(expected_type_id));
         let r = match (self, &mut ref_type) {
@@ -302,10 +313,7 @@ impl Type {
                 assert_ne!(actual_ref_id, expected_type_id);
                 let actual_ref_type = all_references.get(actual_ref_id);
                 match actual_ref_type {
-                    Type::Unknown(_) => {
-                        requirements.ensure_fulfills(self, all_references, in_fn_call)
-                    },
-                    Type::Generic(_) => false,
+                    Type::Unknown(_) | Type::Generic(_) => requirements.ensure_fulfills(self, all_references, in_fn_call),
                     _ => {
                         let r = requirements.ensure_fulfills(self, all_references, in_fn_call); // Different from generics: Expect to be is legal not only when the other type is a unknown
                         ref_type = self.clone(); // Unknown gets collapsed to real type
@@ -347,7 +355,6 @@ impl Type {
         };
 
         match (expected, self) {
-            (_, Type::Unknown(_)) => unimplemented!(),
             (Type::Integer, Type::Integer) => true,
             (Type::Float, Type::Float) => true,
             (Type::String, Type::String) => true,
@@ -435,7 +442,7 @@ impl Type {
                     .join(", "),
                 func.returns.to_string(all_references)
             ),
-            Type::Tuple(inner) => format!("({:?})", inner.iter()
+            Type::Tuple(inner) => format!("({})", inner.iter()
                 .map(|t| t.to_string(all_references))
                 .collect::<Vec<_>>()
                 .join(", ")),

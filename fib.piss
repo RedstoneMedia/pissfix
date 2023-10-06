@@ -15,7 +15,6 @@ fun map<T>(over: T, f: Lam) -> T {
     for i in 0..length(over) {
         v = over[i]
         over[i] = f(v)
-        f(v)
     }
     over
 }
@@ -30,6 +29,18 @@ test_eq(map("Hello World!", (c: Str) -> Str {
 test_eq(map([1, 1+1, 2+1, 2*2, 5, 6], (n: Int) -> Int {
     n * 2 + 1
 }), [3, 5, 7, 9, 11, 13])
+
+fun avg(s: Str) -> Flt {
+    splits = split(s, "\\n")
+    sum = 0.0
+    for number_string in splits {
+        sum += flt(number_string)
+    }
+    sum / length(splits)
+}
+# Should be 830
+test_eq(round(avg("849\\n814\\n906\\n800\\n791\\n807\\n841")), 830)
+
 # Should set inner array value to 15
 nested = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
 nested[2][1] = 15
