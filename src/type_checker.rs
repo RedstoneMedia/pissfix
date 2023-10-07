@@ -236,7 +236,7 @@ impl TypeChecker {
 
                 let function_arguments_length = function.parameters.len();
                 let supplied_arguments_length = call_expr.arguments.len();
-                let function_return_type = function.returns.clone();
+                let mut function_return_type = function.returns.clone();
 
                 if function_arguments_length > supplied_arguments_length {
                     error_tracker.add_error(Error::from_span(
@@ -258,6 +258,22 @@ impl TypeChecker {
                 let arguments: Vec<_> = call_expr.arguments.iter().map(|expr| {
                     (self.check_types_recursive(expr, current_scope_id, error_tracker), expr.get_span())
                 }).collect();
+                // Replace generic return type with known input argument type
+                if let Type::Reference(return_type_id) = &function_return_type {
+                    if let Type::Generic(_) = self.all_references.get(return_type_id) {
+                        let generic_return_argument_index = parameters.iter()
+                            .enumerate()
+                            .find_map(|(i, (_, parm_type))| {
+                                match parm_type {
+                                    Type::Reference(parm_id) if parm_id == return_type_id => Some(i),
+                                    _ => None,
+                                }
+                        });
+                        if let Some(i) = generic_return_argument_index {
+                            function_return_type = arguments[i].0.clone();
+                        }
+                    }
+                }
                 // Check if function call is done to a function that is currently being checked. Aka a recursive call
                 // The argument validly is not describable here, because the called function is not yet fully checked. This is important for generic requirements on the parameters, that might not be known yet.
                 if let Some((_, call_infos)) = self.function_recursive_calls_check_stack.iter_mut().find(|(name, _)| function_name == name) {
