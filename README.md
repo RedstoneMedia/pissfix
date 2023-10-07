@@ -15,7 +15,7 @@ Pissfix is an amazing language ✨ with tons of upsides, such as:
 - Allows comments that carry over to postfix 💬➡️📝
 - We do what's right[^1] 😎👉🚀
 
-[^1]: Pissfix uses right-to-left associativity for + and -. This means that `a - b + c` is the same as `a - (b + c)`, not `(a - b) + c`
+[^1]: Pissfix uses right-to-left associativity. This means that `a - b + c` is the same as `a - (b + c)`, not `(a - b) + c`
 
 ## Example
 
