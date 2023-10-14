@@ -21,7 +21,16 @@ impl TypeChecker {
     }
 
     fn check_type_expression(&mut self, type_expression: &TypeExpression, generic_types: &Vec<Type>, error_tracker: &mut ErrorTracker) -> Type {
-        let TokenEnum::Identifier(type_name) = &type_expression.type_name.kind else {unreachable!()};
+        let single_type_expression = match type_expression {
+            TypeExpression::SingleTypeExpression(t) => t,
+            TypeExpression::UnionTypeExpression(UnionExpression {types}) => {
+                return Type::Union(types.into_iter()
+                    .map(|t| self.check_type_expression(t, generic_types, error_tracker))
+                    .collect())
+            }
+        };
+
+        let TokenEnum::Identifier(type_name) = &single_type_expression.type_name.kind else {unreachable!()};
         if let Some(ref_type) = generic_types.iter().find(|t| {
             let Type::Reference(id) = t else {unreachable!("Has to be generic reference")};
             let Type::Generic(generic) = self.all_references.get(id) else {unreachable!("Has to be generic reference")};
@@ -34,18 +43,19 @@ impl TypeChecker {
             "Flt" => Type::Float,
             "Str" => Type::String,
             "Bool" => Type::Boolean,
+            "Any" => Type::Any,
             "Lam" => Type::Lambda(Box::new(Function {
                 parameters: vec![], // Unknown until generics are properly implemented
                 returns: self.unknown(), // Unknown until generics are properly implemented
                 scope_id: u64::MAX,
             })),
             "Arr" => {
-                let inner_type = type_expression.generic_parameters
+                let inner_type = single_type_expression.generic_parameters
                     .as_ref()
                     .and_then(|p| p.parameters.get(0));
                 let Some(inner) = inner_type else {
                     error_tracker.add_error(Error::from_span(
-                        type_expression.type_name.get_span(),
+                        single_type_expression.type_name.get_span(),
                         format!("Array needs one generic type argument"),
                         ErrorKind::TypeCheckError
                     ));
@@ -55,7 +65,7 @@ impl TypeChecker {
             },
             _ => {
                 error_tracker.add_error(Error::from_span(
-                    type_expression.type_name.get_span(),
+                    single_type_expression.type_name.get_span(),
                     format!("Invalid type name: {}", type_name),
                     ErrorKind::TypeCheckError
                 ));
@@ -73,9 +83,9 @@ impl TypeChecker {
         }
 
         let generic_types = function_expr.generic_parameters.as_ref().map(|g| g.parameters.iter()
-            .map(|ty_expr| {
-                let TokenEnum::Identifier(generic_name) = &ty_expr.type_name.kind else {unreachable!()};
-                Generic::new(generic_name.clone(), None, &mut self.all_references)
+            .map(|function_generic_parameter| {
+                let TokenEnum::Identifier(generic_name_str) = &function_generic_parameter.name.kind else {unreachable!()};
+                Generic::new(generic_name_str.clone(), None, &mut self.all_references)
             })
             .collect()
         ).unwrap_or(vec![]);
@@ -340,6 +350,7 @@ impl TypeChecker {
             TokenEnum::Minus {..} => (TypeRequirement::Subtraction(right.clone()), TypeRequirement::Subtraction(left.clone())),
             TokenEnum::Multiply {..} => (TypeRequirement::Multiplication(right.clone()), TypeRequirement::Multiplication(left.clone())),
             TokenEnum::Divide {..} => (TypeRequirement::Division(right.clone()), TypeRequirement::Division(left.clone())),
+            TokenEnum::LessThan | TokenEnum::GreaterThan {..} => (TypeRequirement::Ord(right.clone()), TypeRequirement::Ord(left.clone())),
             _ => unreachable!("Not a binary operator token: {:?}", binary_expr.operation.kind)
         };
 
@@ -392,7 +403,7 @@ impl TypeChecker {
                     Type::Boolean
                 }
             },
-            TokenEnum::DoubleEquals | TokenEnum::NotEquals => {
+            TokenEnum::DoubleEquals | TokenEnum::NotEquals | TokenEnum::GreaterThan | TokenEnum::LessThan => {
                 self.binary_require_both(&left_type, &right_type, binary_expr, error_tracker);
                 Type::Boolean
             }

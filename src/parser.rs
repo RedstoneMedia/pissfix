@@ -119,7 +119,7 @@ impl Parser {
         })
     }
 
-    fn parse_type(&mut self) -> Result<TypeExpression, Error> {
+    fn parse_single_type(&mut self) -> Result<TypeExpression, Error> {
         let name_token = self.next();
         if let TokenEnum::Identifier(_) = name_token.kind {} else {
             return Err(Error::from_span(
@@ -129,10 +129,10 @@ impl Parser {
             ));
         }
         if self.peek_next(0).kind != TokenEnum::LessThan {
-            return Ok(TypeExpression {
+            return Ok(TypeExpression::SingleTypeExpression(SingleTypeExpression {
                 type_name: name_token,
                 generic_parameters: None,
-            })
+            }))
         }
         let generics_opening_token = self.next();
         let parameters = self.parse_seperated_expressions_until(
@@ -141,15 +141,31 @@ impl Parser {
             TokenEnum::Comma
         )?;
 
-        Ok(TypeExpression {
+        Ok(TypeExpression::SingleTypeExpression( SingleTypeExpression {
             type_name: name_token,
             generic_parameters: Some(GenericParameters {
                 opening: generics_opening_token,
                 parameters,
                 closing: self.next(),
             }),
-        })
+        }))
     }
+
+    fn parse_type(&mut self) -> Result<TypeExpression, Error> {
+        let expr = self.parse_single_type()?;
+        if self.peek_next(0).kind != TokenEnum::Pipe {
+            return Ok(expr)
+        }
+        let mut exprs = vec![expr];
+        while self.peek_next(0).kind == TokenEnum::Pipe {
+            self.next_token += 1;
+            exprs.push(self.parse_single_type()?);
+        }
+        Ok(TypeExpression::UnionTypeExpression( UnionExpression {
+            types: exprs
+        }))
+    }
+
 
     fn parse_function_definition(&mut self, token : Token, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<Node, Error> {
         // Get function name
@@ -166,24 +182,32 @@ impl Parser {
             let opening = self.next();
             let parameters = self.parse_seperated_expressions_until(
                 &|t| t == TokenEnum::GreaterThan,
-                |s| {
-                    let t = s.next();
-                    if let TokenEnum::Identifier(_) = t.kind {
-                        Ok(TypeExpression {
-                            type_name: t,
-                            generic_parameters: None
-                        })
-                    } else {
-                        Err(Error::from_span(
+                |_self| {
+                    let t = _self.next();
+                    if let TokenEnum::Identifier(_) = t.kind {} else {
+                        return Err(Error::from_span(
                             t.span.clone(),
                             format!("Expected generic type identifier"),
                             ErrorKind::ParsingError
-                        ))
+                        ));
                     }
+                    let peeked_next = _self.peek_next(0);
+                    let (double_point, type_restriction) = if peeked_next.kind == TokenEnum::DoublePoint {
+                        _self.next_token += 1;
+                        let double_point_token = peeked_next;
+                        (Some(double_point_token), Some(_self.parse_type()?))
+                    } else {
+                        (None, None)
+                    };
+                    Ok(FunctionGenericParameter {
+                        name: t,
+                        double_point,
+                        type_restriction,
+                    })
                 },
                 TokenEnum::Comma
             )?;
-            Some(GenericParameters {
+            Some(FunctionGenericParameters {
                 opening,
                 parameters,
                 closing: self.next(),

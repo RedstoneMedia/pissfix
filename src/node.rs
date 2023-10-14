@@ -12,7 +12,7 @@ mod break_expression;
 mod comment;
 mod for_expression;
 mod base_function_expression;
-mod type_expression;
+mod r#type;
 
 pub use crate::{GetSpan, Span};
 
@@ -21,10 +21,10 @@ pub(super) mod prelude {
     pub use crate::node::binary_expression::BinaryExpression;
     pub use crate::node::call_expression::CallExpression;
     pub use crate::node::unary_expression::UnaryExpression;
-    pub use crate::node::type_expression::{TypeExpression, GenericParameters};
+    pub use crate::node::r#type::*;
     pub use crate::node::break_expression::BreakExpression;
     pub use crate::node::expression_list::ExpressionList;
-    pub use crate::node::function_expression::FunctionExpression;
+    pub use crate::node::function_expression::{FunctionExpression, FunctionGenericParameters, FunctionGenericParameter};
     pub use crate::node::base_function_expression::{BaseFunctionExpression, FunctionParameter, FunctionReturnType};
     pub use crate::node::if_expression::IfExpression;
     pub use crate::node::index_expression::IndexExpression;

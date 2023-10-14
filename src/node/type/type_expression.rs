@@ -1,30 +1,15 @@
 use crate::{GetSpan, Span};
+use crate::node::r#type::generic_parameters::GenericParameters;
 use crate::token::Token;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct GenericParameters {
-    pub opening: Token,
-    pub parameters: Vec<TypeExpression>,
-    pub closing: Token
-}
-
-impl GetSpan for GenericParameters {
-    fn get_span(&self) -> Span {
-        Span {
-            start_char: self.opening.span.start_char,
-            end_char: self.closing.span.end_char,
-        }
-    }
-}
-
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TypeExpression {
+pub struct SingleTypeExpression {
     pub type_name: Token,
     pub generic_parameters: Option<GenericParameters>,
 }
 
-impl GetSpan for TypeExpression {
+impl GetSpan for SingleTypeExpression {
     fn get_span(&self) -> Span {
         Span {
             start_char: self.type_name.span.start_char,

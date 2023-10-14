@@ -248,6 +248,7 @@ impl Lexer {
             '-' => TokenEnum::Minus,
             '*' => TokenEnum::Multiply,
             '/' => TokenEnum::Divide,
+            '|' => TokenEnum::Pipe,
             '>' => TokenEnum::GreaterThan,
             '<' => TokenEnum::LessThan,
             '=' => TokenEnum::Equals,

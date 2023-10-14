@@ -80,7 +80,7 @@ impl TypeRequirements {
 
     pub(crate) fn to_string(&self, all_references: &AllReferences) -> String {
         if self.requirements.is_empty() {
-            return "Any".to_string();
+            return "Type".to_string();
         }
         let requirements_strings : Vec<_> = self.requirements.iter()
             .map(|req| req.to_string(all_references))
@@ -143,6 +143,7 @@ pub(crate) enum TypeRequirement {
     Subtraction(Type),
     Multiplication(Type),
     Division(Type),
+    Ord(Type),
     Negation
 }
 
@@ -201,6 +202,7 @@ impl TypeRequirement {
                 | Self::Subtraction(with)
                 | Self::Multiplication(with)
                 | Self::Division(with)
+                | Self::Ord(with)
                 , _
             ) => {
                 t.expect_to_be(with, all_references, in_fn_call)
@@ -248,6 +250,7 @@ impl TypeRequirement {
             TypeRequirement::Subtraction(with) => format!("Subtraction with {}", with.to_string(all_references)),
             TypeRequirement::Multiplication(with) => format!("Multiplication with {}", with.to_string(all_references)),
             TypeRequirement::Division(with) => format!("Division with {}", with.to_string(all_references)),
+            TypeRequirement::Ord(with) => format!("Order with {}", with.to_string(all_references)),
             TypeRequirement::Negation => "Negation".to_string(),
         }
     }
@@ -264,6 +267,7 @@ pub(crate) enum Type {
     Lambda(Box<Function>),
     Tuple(Vec<Type>),
     Array(usize),
+    Any, // Acts like a union of all types
     Union(Vec<Type>),
     Reference(usize),
     // These types should *always* be behind a Reference Type
@@ -291,7 +295,6 @@ impl Type {
             Type::Range => Some(Type::Integer),
             Type::Tuple(types) => unimplemented!(),
             Type::Array(inner_id) => Some(Type::Reference(*inner_id)),
-            Type::Union(types) => unimplemented!(),
             _ => None
         }
     }
@@ -347,14 +350,12 @@ impl Type {
                 if r_id == a_id {
                     return true;
                 }
-                return self.ref_expect_to_be(r_id, all_references, in_fn_call) && expected.ref_expect_to_be(a_id, all_references, in_fn_call)
+                self.ref_expect_to_be(r_id, all_references, in_fn_call) && expected.ref_expect_to_be(a_id, all_references, in_fn_call)
             },
-            (Type::Reference(r_id), _) => return self.ref_expect_to_be(r_id, all_references, in_fn_call),
-            (_, Type::Reference(a_id)) => return expected.ref_expect_to_be(a_id, all_references, in_fn_call),
-            (_, _) => {}
-        };
-
-        match (expected, self) {
+            (Type::Reference(r_id), _) => self.ref_expect_to_be(r_id, all_references, in_fn_call),
+            (_, Type::Reference(a_id)) => expected.ref_expect_to_be(a_id, all_references, in_fn_call),
+            (Type::Any, _) | (_, Type::Any) if in_fn_call => true,
+            (Type::Any, Type::Any) => true,
             (Type::Integer, Type::Integer) => true,
             (Type::Float, Type::Float) => true,
             (Type::String, Type::String) => true,
@@ -405,7 +406,7 @@ impl Type {
             (Type::Union(types_expected), actual) => {
                 types_expected
                     .iter()
-                    .any(|sub_expected| actual.expect_to_be(sub_expected, all_references, in_fn_call))
+                    .all(|sub_expected| actual.expect_to_be(sub_expected, all_references, in_fn_call))
             },
             (_, _) => false
         }
@@ -434,6 +435,7 @@ impl Type {
             Type::String => "String".to_string(),
             Type::Boolean => "Boolean".to_string(),
             Type::Range => "Range".to_string(),
+            Type::Any => "Any".to_string(),
             Type::Lambda(func) => format!(
                 "Lambda ({}) -> {}",
                 func.parameters.iter()

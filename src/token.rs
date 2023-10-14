@@ -24,6 +24,7 @@ pub enum TokenEnum {
     Minus,
     Multiply,
     Divide,
+    Pipe,
     GreaterThan,
     LessThan,
     And,

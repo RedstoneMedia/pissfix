@@ -39,27 +39,35 @@ impl CodeGenerator {
         }
     }
 
-    fn generate_base_function_code(&mut self, anonymous_function_expression: &BaseFunctionExpression, generic_parameters: &Option<GenericParameters>, indent_level: usize) {
+    fn get_type_expression_code<'a>(type_expression: &'a TypeExpression, generic_types: &Vec<&str>) -> &'a str {
+        match type_expression {
+            TypeExpression::SingleTypeExpression(SingleTypeExpression { type_name: type_name_token, .. }) => {
+                let TokenEnum::Identifier(type_name) = &type_name_token.kind else {unreachable!()};
+                if generic_types.contains(&type_name.as_str()) {"Obj"} else {type_name}
+            }
+            TypeExpression::UnionTypeExpression(_) => "Obj"
+        }
+    }
+
+    fn generate_base_function_code(&mut self, anonymous_function_expression: &BaseFunctionExpression, generic_parameters: &Option<FunctionGenericParameters>, indent_level: usize) {
         let BaseFunctionExpression {parameters, return_type, body, ..} = anonymous_function_expression;
         self.add_with_indent("(", indent_level);
         let generic_types = if let Some(generic_parameters) = generic_parameters {
             generic_parameters.parameters.iter().map(|generic_parm| {
-                let TokenEnum::Identifier(generic_type_name) = &generic_parm.type_name.kind else {unreachable!()};
-                generic_type_name
+                let TokenEnum::Identifier(generic_type_name) = &generic_parm.name.kind else {unreachable!()};
+                generic_type_name.as_str()
             }).collect()
         } else {vec![]};
         for parameter in parameters {
             let TokenEnum::Identifier(parameter_name) = &parameter.name.kind else {unreachable!()};
-            let TokenEnum::Identifier(parameter_type) = &parameter.parameter_type.type_name.kind else {unreachable!()};
-            let parameter_type = if generic_types.contains(&parameter_type) { "Obj" } else {parameter_type};
+            let parameter_type = CodeGenerator::get_type_expression_code(&parameter.parameter_type, &generic_types);
             self.add_with_indent(&format!("{} :{}, ", parameter_name, parameter_type), indent_level);
         }
         self.code.pop(); // Removes unnecessary trailing ' '
         self.code.pop(); // Removes unnecessary trailing ','
         if let Some(return_type) = return_type {
-            let TokenEnum::Identifier(return_type_ident) = &return_type.return_type.type_name.kind else {unreachable!()};
-            let return_type_ident = if generic_types.contains(&return_type_ident) { "Obj" } else {return_type_ident};
-            self.add_with_indent(&format!(" -> :{}", return_type_ident), indent_level);
+            let return_type = CodeGenerator::get_type_expression_code(&return_type.return_type, &generic_types);
+            self.add_with_indent(&format!(" -> :{}", return_type), indent_level);
         };
         self.add_with_indent(") ", indent_level);
         self.generate_code(body, indent_level);

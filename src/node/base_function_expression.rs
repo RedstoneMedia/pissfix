@@ -1,6 +1,6 @@
 use crate::{GetSpan, Span};
 use crate::node::Node;
-use crate::node::type_expression::TypeExpression;
+use crate::node::r#type::TypeExpression;
 use crate::token::Token;
 
 #[derive(Debug, Clone, PartialEq)]
