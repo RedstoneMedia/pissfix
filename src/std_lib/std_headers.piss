@@ -1,0 +1,104 @@
+abs<T: Int | Flt>(x: T) -> T
+acos(x: Int | Flt) -> Flt
+and(a: Bool, b: Bool) -> Bool
+and(arr: Arr<Bool>) -> Bool
+append<T>(arr: Arr<T>, value: T) -> Arr<T>
+arr<T>(obj: T) -> Arr
+is_arr(obj: Any) -> Bool
+array(length: Int) -> Arr
+array<T>(length: Int, value: T) -> Arr<T>
+asin(x: Int | Flt) -> Flt
+atan(x: Int | Flt) -> Flt
+atan2(y: Int | Flt, x: Int | Flt) -> Flt
+is_bool(obj: Any) -> Bool
+breakif(condition: Bool)
+ceil(x: Int | Flt) -> Int
+char_to_str(char: Int) -> Str
+chars_to_str(chars: Arr<Str>) -> Str
+contains<T>(arr: Arr<T>, value: T) -> Bool
+contains(str: Str, value: Str) -> Bool
+cos(x: Int | Flt) -> Flt
+div(a: Int | Flt, b: Int | Flt) -> Int
+is_empty<T>(obj: Arr<T> | Str) -> Bool
+err(message: Str)
+exp(x: Int | Flt) -> Flt
+find<T>(arr: Arr<T>, value: T) -> Int
+find(str: Str, value: Str) -> Int
+find_from<T>(arr: Arr<T>, value: T, startat: Int) -> Int
+find_from(str: Str, value: Str, startat: Int) -> Int
+floor(x: Int | Flt) -> Int
+flt<T>(obj: T) -> Flt
+is_flt(obj: Any) -> Bool
+format<T>(format: Str, params: Arr<T>) -> Str
+get(str: Str, i: Int) -> Str
+get<T>(arr: Arr<T>, i: Int) -> T
+image_height<T>(image: Arr<T>) -> Flt
+image_width<T>(image: Arr<T>) -> Flt
+insert<T>(arr: Arr<T>, index: Int, value: T) -> Arr<T>
+insert(str: Str, index: Int, character: Int) -> Str
+insert(str: Str, index: Int, insert: Str) -> Str
+int<T>(obj: T) -> Int
+is_int(obj: Any) -> Bool
+length(str: Str) -> Int
+length<T>(arr: Arr<T>) -> Int
+ln(x: Int | Flt) -> Flt
+load_value(key: Str) -> Str
+log(x: Int | Flt, b: Int | Flt) -> Flt
+lower_case(str: Str) -> Str
+max<N: Int | Flt>(a: N, b: N) -> N
+min<N: Int | Flt>(a: N, b: N) -> N
+mod<N: Int | Flt>(a: N, b: N) -> N
+is_nil(obj: Any) -> Bool
+not(b: Bool) -> Bool
+is_num(obj: Any) -> Bool
+is_obj(obj: Any) -> Bool
+or(a: Bool, b: Bool) -> Bool
+or(arr: Arr<Bool>) -> Bool
+is_params(obj: Any) -> Bool
+pi() -> Flt
+pow(b: Int | Flt, n: Int | Flt) -> Flt
+print(value: Int | Flt | Bool | Str)
+printf(format: Str, params: Arr<Any>)
+printfln(format: Str, params: Arr<Any>)
+println(value: Int | Flt | Bool | Str)
+rand_flt() -> Flt
+rand_int(n: Int) -> Int
+rand_seed(seed: Int)
+read_char() -> Int
+read_flt() -> Flt
+read_image_url(url: Str) -> Str
+read_int() -> Int
+read_line() -> Str
+read_url(url: Str) -> Str
+remove<T>(arr: Arr<T>, value: T) -> Arr<T>
+remove_at<T>(arr: Arr<T>, index: Int) -> Arr<T>
+remove_at(str: Str, index: Int) -> Str
+replace_all(str: Str, regex: Str, replace: Str) -> Str
+replace_first(str: Str, regex: Str, replace: Str) -> Str
+reverse<T>(arr: Arr<T>) -> Arr<T>
+reverse(str: Str) -> Str
+round(x: Int | Flt) -> Int
+set(str: Str, i: Int, value: Str) -> Str
+set<T>(arr: Arr<T>, i: Int, value: T) -> Arr<T>
+show(title: Str, width: Int | Flt, height: Int | Flt, initialstate: Any, callbacks: Arr<Any>)
+show_image(image: Arr<Any>)
+shuffle<T>(arr: Arr<T>) -> Arr<T>
+sign(x: Int | Flt) -> Int
+sin(x: Int | Flt) -> Flt
+sleep(delay: Int)
+slice<T>(arr: Arr<T>, start: Int, end: Int) -> Arr<T>
+slice(str: Str, start: Int, end: Int) -> Str
+sort<T>(arr: Arr<T>) -> Arr<T>
+split(str: Str, regex: Str) -> Arr<Str>
+sqrt(x: Int | Flt) -> Flt
+stack_count() -> Int
+store_value(key: Str, value: Str)
+str(obj: Any) -> Str
+str_to_chars(str: Str) -> Arr<Str>
+is_str(obj: Any) -> Bool
+tan(x: Int | Flt) -> Flt
+test_neq<T>(actual: T, not_expected: T)
+test_eq<T>(actual: T, expected: T)
+time_millis() -> Int
+trim(str: Str) -> Str
+upper_case(str: Str) -> Str

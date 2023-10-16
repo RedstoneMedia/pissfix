@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::usize;
 use crate::scope::Function;
 
 /// Holds all types that were Unknown at one point All references
@@ -32,7 +34,19 @@ impl AllReferences {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Generic {
     pub name: String,
-    pub requirements: TypeRequirements
+    pub base: GenericBase
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum GenericBase {
+    Requirements(TypeRequirements),
+    Specific(Type)
+}
+
+impl Default for GenericBase {
+    fn default() -> Self {
+        Self::Requirements(Default::default())
+    }
 }
 
 
@@ -98,12 +112,19 @@ impl TypeRequirements {
 
 impl Generic {
 
-    pub(crate) fn new(name: String, requirements: Option<TypeRequirements>, all_references: &mut AllReferences) -> Type {
+    pub(crate) fn new_requirement_based(name: String, requirements: Option<TypeRequirements>, all_references: &mut AllReferences) -> Type {
         let id = all_references.insert(Type::Generic(Box::new(Self {
             name,
-            requirements: requirements.unwrap_or_else(|| Default::default()),
+            base: GenericBase::Requirements(requirements.unwrap_or_else(|| Default::default())),
         })));
         Type::Reference(id)
+    }
+
+    pub(crate) fn new_specific_based(name: String, specific_type: Type) -> Type {
+        Type::Generic(Box::new(Self {
+            name,
+            base: GenericBase::Specific(specific_type),
+        }))
     }
 
     pub(crate) fn to_string(&self, all_references: &AllReferences) -> String {
@@ -112,26 +133,37 @@ impl Generic {
         } else {
             format!(" {}", self.name)
         };
-        format!("Generic{} {}", name, self.requirements.to_string(all_references))
+        match &self.base {
+            GenericBase::Requirements(requirements) => format!("Generic{} {}", name, requirements.to_string(all_references)),
+            GenericBase::Specific(t) => t.to_string(all_references)
+        }
+
     }
 
     fn ensure_fulfills(&mut self, t: &Type, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
-        self.requirements.ensure_fulfills(t, all_references, in_fn_call)
-    }
-
-    fn require(&mut self, mut requirement: TypeRequirement, all_references: &mut AllReferences, in_fn_call: bool) {
-        let already_required = self.requirements.requirements.iter()
-            .any(|req| req.eq(&requirement, all_references, in_fn_call));
-        if !already_required {
-            // Always create inner generic for Index requirement
-            if let TypeRequirement::Index(None) = requirement {
-                let inner_id = all_references.insert(Type::Generic(Default::default()));
-                requirement = TypeRequirement::Index(Some(inner_id))
-            }
-            self.requirements.requirements.push(requirement);
+        match &mut self.base {
+            GenericBase::Requirements(requirements) => requirements.ensure_fulfills(t, all_references, in_fn_call),
+            GenericBase::Specific(specific_type) => t.expect_to_be(specific_type, all_references, in_fn_call)
         }
     }
 
+    fn require(&mut self, mut requirement: TypeRequirement, all_references: &mut AllReferences, in_fn_call: bool) {
+        match &mut self.base {
+            GenericBase::Requirements(requirements) => {
+                let already_required = requirements.requirements.iter()
+                    .any(|req| req.eq(&requirement, all_references, in_fn_call));
+                if !already_required {
+                    // Always create inner generic for Index requirement
+                    if let TypeRequirement::Index(None) = requirement {
+                        let inner_id = all_references.insert(Type::Generic(Default::default()));
+                        requirement = TypeRequirement::Index(Some(inner_id))
+                    }
+                    requirements.requirements.push(requirement);
+                }
+            }
+            GenericBase::Specific(_) => unimplemented!()
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -337,7 +369,7 @@ impl Type {
                 r
             }
             (_, _) => {
-                ref_type.expect_to_be(self, all_references, in_fn_call)
+                self.expect_to_be(&ref_type, all_references, in_fn_call)
             }
         };
         std::mem::swap(&mut ref_type, all_references.get_mut(expected_type_id));
@@ -350,10 +382,22 @@ impl Type {
                 if r_id == a_id {
                     return true;
                 }
-                self.ref_expect_to_be(r_id, all_references, in_fn_call) && expected.ref_expect_to_be(a_id, all_references, in_fn_call)
+                self.ref_expect_to_be(r_id, all_references, in_fn_call) //&& expected.ref_expect_to_be(a_id, all_references, in_fn_call)
             },
             (Type::Reference(r_id), _) => self.ref_expect_to_be(r_id, all_references, in_fn_call),
-            (_, Type::Reference(a_id)) => expected.ref_expect_to_be(a_id, all_references, in_fn_call),
+            (_, Type::Reference(a_id)) => expected.ref_expect_to_be(a_id, all_references, in_fn_call), // Does not work because expected becomes actual here
+            (Type::Generic(gen), _) => {
+                match &gen.base {
+                    GenericBase::Requirements(_) => unreachable!("Generic requirements are always behind reference"),
+                    GenericBase::Specific(t) => self.expect_to_be(&t, all_references, in_fn_call)
+                }
+            }
+            (_, Type::Generic(gen)) => { // e a
+                match &gen.base {
+                    GenericBase::Requirements(_) => unreachable!("Generic requirements are always behind reference"),
+                    GenericBase::Specific(t) => t.expect_to_be(expected, all_references, in_fn_call)
+                }
+            }
             (Type::Any, _) | (_, Type::Any) if in_fn_call => true,
             (Type::Any, Type::Any) => true,
             (Type::Integer, Type::Integer) => true,
@@ -406,7 +450,7 @@ impl Type {
             (Type::Union(types_expected), actual) => {
                 types_expected
                     .iter()
-                    .all(|sub_expected| actual.expect_to_be(sub_expected, all_references, in_fn_call))
+                    .any(|sub_expected| actual.expect_to_be(sub_expected, all_references, in_fn_call))
             },
             (_, _) => false
         }
@@ -469,9 +513,60 @@ impl Type {
         }
     }
 
+    /// Get the names of the Generics, that are used by the type
+    pub(crate) fn get_used_generics(&self, all_references: &AllReferences) -> Vec<String> {
+        match self {
+            Type::Lambda(lam) => vec![], // TODO: Implement
+            Type::Tuple(inner_types) => inner_types.iter()
+                .map(|inner_type| inner_type.get_used_generics(all_references))
+                .flatten()
+                .collect(),
+            Type::Array(inner_ref_id) => all_references.get(inner_ref_id).get_used_generics(all_references),
+            Type::Reference(ref_id) => all_references.get(ref_id).get_used_generics(all_references),
+            Type::Generic(gen) => vec![gen.name.clone()],
+            Type::Union(_) => vec![], // There is no concrete way to know which variant of the union is going to be used. Consider a Type: `Str | T`. T could be used, or not depending on the situation
+            _ => vec![]
+        }
+    }
+
+    pub(crate) fn replace_type_generics(&mut self, generic_map: &HashMap<String, usize>, real_types: &Vec<&Type>, all_references: &mut AllReferences) {
+        let generic_name = match self {
+            Type::Reference(return_type_id) => match all_references.get(return_type_id) {
+                Type::Generic(gen) => Some(gen.name.clone()),
+                _ => None
+            },
+            Type::Generic(gen) => match &gen.base {
+                GenericBase::Requirements(_) => unreachable!("Generic requirement have to be behind reference"),
+                GenericBase::Specific(_) => Some(gen.name.clone())
+            },
+            Type::Array(inner_id) => {
+                let mut new_inner = all_references.get(inner_id).clone();
+                new_inner.replace_type_generics(generic_map, real_types, all_references);
+                *inner_id = all_references.insert(new_inner); // Don't always create new array reference (Maybe the replace_return_type_generics didn't do anything)
+                None
+            },
+            Type::Union(inner_types) | Type::Tuple(inner_types) => {
+                for inner_type in inner_types {
+                    inner_type.replace_type_generics(generic_map, real_types, all_references)
+                }
+                None
+            },
+            Type::Lambda(lam) => None, // TODO: Implement
+            _ => None
+        };
+        if let Some(generic_name) = generic_name {
+            if let Some(param_index) = generic_map.get(&generic_name) {
+                *self = real_types[*param_index].clone();
+            }
+        }
+    }
+
     fn requirements(&self) -> Option<&TypeRequirements> {
         match self {
-            Type::Generic(gen) => Some(&gen.requirements),
+            Type::Generic(gen) => match &gen.base {
+                GenericBase::Requirements(requirements) => Some(&requirements),
+                GenericBase::Specific(_) => None,
+            },
             Type::Unknown(req) => Some(req),
             _ => {None}
         }

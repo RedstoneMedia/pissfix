@@ -1,0 +1,141 @@
+x :Num -> :Num
+x :Num -> :Flt
+a :Bool, b :Bool -> :Bool
+arr :Arr -> :Bool
+arr :Arr, value :Obj -> :Arr
+obj :Obj -> :Arr
+obj :Obj -> :Bool
+length :Int, initializer :ExeArr -> :Arr
+length :Int, value :Obj -> :Arr
+x :Num -> :Flt
+x :Num -> :Flt
+y :Num, x :Num -> :Flt
+obj :Obj -> :Bool
+condition :Bool
+x :Num -> :Int
+char :Int -> :Str
+chars :Arr -> :Str
+conditions :Arr
+name :Sym, params :Params, conditions :Arr
+arr :Arr, value :Obj -> :Bool
+str :Str, value :Obj -> :Bool
+i :Int -> :Obj
+x :Num -> :Flt
+name :Sym, definition :Params
+name :Sym, variants :Arr
+a :Num, b :Num -> :Int
+obj :Obj -> :Obj, :Obj
+obj :Obj -> :Bool
+message :Str
+obj :Obj -> :ExeArr
+obj :Obj -> :Bool
+obj :Obj
+x :Num -> :Flt
+arr :Arr, value :Obj -> :Int
+str :Str, value :Obj -> :Int
+arr :Arr, value :Obj, startAt :Int -> :Int
+str :Str, value :Obj, startAt :Int -> :Int
+x :Num -> :Int
+obj :Obj -> :Flt
+obj :Obj -> :Bool
+lower :Int, upper :Int, body :ExeArr
+arr :Arr, body :ExeArr
+str :Str, body :ExeArr
+arr :Arr, body :ExeArr
+str :Str, body :ExeArr
+format :Str, params :Arr -> :Str
+name :Sym, params :Params, body :ExeArr
+str :Str, i :Int -> :Str
+arr :Arr, i :Int -> :Obj
+arr :Arr, key :Obj -> :Obj
+condition :Bool, then :ExeArr, else :ExeArr
+image :Arr -> :Flt
+image :Arr -> :Flt
+arr :Arr, index :Int, value :Obj -> :Arr
+str :Str, index :Int, character :Int -> :Str
+str :Str, index :Int, insert :Str -> :Str
+obj :Obj -> :Int
+obj :Obj -> :Bool
+arr :Arr, key :Obj, default :Obj -> :Obj
+arr :Arr, key :Obj, value :Obj -> :Arr
+arr :Arr, key :Obj, default :Obj, updater :ExeArr -> :Arr
+params :Params, body :ExeArr -> :Lam
+str :Str -> :Int
+arr :Arr -> :Int
+x :Num -> :Flt
+key :Str -> :Str
+x :Num, b :Num -> :Flt
+body :ExeArr
+str :Str -> :Str
+a :Num, b :Num -> :Num
+a :Num, b :Num -> :Num
+a :Num, b :Num -> :Num
+obj :Obj -> :Bool
+b :Bool -> :Bool
+obj :Obj -> :Bool
+obj :Obj -> :Bool
+a :Bool, b :Bool -> :Bool
+arr :Arr -> :Bool
+obj :Obj -> :Bool
+arr :Arr, keys :Arr, value :Obj -> :Arr
+arr :Arr, keys :Arr, value :Obj -> :Arr
+arr :Arr, keys :Arr, default :Obj, updater :ExeArr -> :Arr
+-> :Flt
+obj :Obj
+params :Params
+b :Num, n :Num -> :Flt
+value :Obj
+format :Str, params :Arr
+format :Str, params :Arr
+value :Obj
+-> :Flt
+n :Int -> :Int
+seed :Int
+-> :Int
+-> :Flt
+url :Str -> :Str
+-> :Int
+-> :Str
+url :Str -> :Str
+arr :Arr, value :Obj -> :Arr
+arr :Arr, index :Int -> :Arr
+str :Str, index :Int -> :Str
+str :Str, regex :Str, replace :Str -> :Str
+str :Str, regex :Str, replace :Str -> :Str
+arr :Arr -> :Arr
+str :Str -> :Str
+x :Num -> :Int
+str :Str, i :Int, value :Str -> :Str
+arr :Arr, i :Int, value :Obj -> :Arr
+arr :Arr, key :Obj -> :Arr
+title :Str, width :Num, height :Num, initialState :Obj, callbacks :Arr
+image :Arr
+arr :Arr -> :Arr
+x :Num -> :Int
+x :Num -> :Flt
+delay :Int
+arr :Arr, start :Int, end :Int -> :Arr
+str :Str, start :Int, end :Int -> :Str
+arr :Arr -> :Arr
+str :Str, regex :Str -> :Arr
+x :Num -> :Flt
+-> :Int
+key :Str, value :Str
+obj :Obj -> :Str
+str :Str -> :Arr
+obj :Obj -> :Bool
+a :Obj, b :Obj -> :Obj, :Obj
+obj :Obj -> :Sym
+obj :Obj -> :Bool
+fn :Sym
+x :Num -> :Flt
+actual, notExpected
+actual, notExpected, tolerance :Num
+actual, expected
+actual, expected, tolerance :Num
+-> :Int
+str :Str -> :Str
+obj :Obj -> :Sym
+functions :Arr
+str :Str -> :Str
+sym :Sym -> :Obj

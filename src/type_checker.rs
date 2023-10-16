@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use crate::errors::{Error, ErrorKind, ErrorTracker};
 use crate::{GetSpan, Span};
 use crate::node::Node;
 use crate::node::prelude::*;
-use crate::r#type::{AllReferences, Generic, TypeRequirement, Type, TypeRequirements};
+use crate::r#type::{AllReferences, Generic, TypeRequirement, Type, TypeRequirements, GenericBase};
 use crate::scope::{AllScopes, Function, Scope};
 use crate::token::TokenEnum;
 
@@ -20,7 +21,7 @@ impl TypeChecker {
         TypeRequirements::new(None, &mut self.all_references)
     }
 
-    fn check_type_expression(&mut self, type_expression: &TypeExpression, generic_types: &Vec<Type>, error_tracker: &mut ErrorTracker) -> Type {
+    fn check_type_expression(&mut self, type_expression: &TypeExpression, generic_types: &Vec<(&str, Type)>, error_tracker: &mut ErrorTracker) -> Type {
         let single_type_expression = match type_expression {
             TypeExpression::SingleTypeExpression(t) => t,
             TypeExpression::UnionTypeExpression(UnionExpression {types}) => {
@@ -31,12 +32,14 @@ impl TypeChecker {
         };
 
         let TokenEnum::Identifier(type_name) = &single_type_expression.type_name.kind else {unreachable!()};
-        if let Some(ref_type) = generic_types.iter().find(|t| {
-            let Type::Reference(id) = t else {unreachable!("Has to be generic reference")};
-            let Type::Generic(generic) = self.all_references.get(id) else {unreachable!("Has to be generic reference")};
-            &generic.name == type_name
+        if let Some(generic_type) = generic_types.iter().find_map(|(generic_name, generic_type)| {
+            if generic_name == type_name {
+                Some(generic_type)
+            } else {
+                None
+            }
         }) {
-            return ref_type.clone();
+            return generic_type.clone();
         }
         match type_name.as_ref() {
             "Int" => Type::Integer,
@@ -46,6 +49,7 @@ impl TypeChecker {
             "Any" => Type::Any,
             "Lam" => Type::Lambda(Box::new(Function {
                 parameters: vec![], // Unknown until generics are properly implemented
+                generic_parameter_map: Default::default(),
                 returns: self.unknown(), // Unknown until generics are properly implemented
                 scope_id: u64::MAX,
             })),
@@ -61,7 +65,9 @@ impl TypeChecker {
                     ));
                     return self.unknown()
                 };
-                self.check_type_expression(inner, generic_types, error_tracker)
+                let inner_type = self.check_type_expression(inner, generic_types, error_tracker);
+                let inner_ref_id = self.all_references.insert(inner_type);
+                Type::Array(inner_ref_id)
             },
             _ => {
                 error_tracker.add_error(Error::from_span(
@@ -78,14 +84,23 @@ impl TypeChecker {
         let TokenEnum::Identifier(function_name) = &function_expr.name.kind else {unreachable!()};
         // If function is already defined in current scope don't re define it.
         if self.all_scopes.get(&current_scope_id).functions.get(function_name).is_some() {
-            // TODO: Throw error instead of ignoring
+            error_tracker.add_error(Error::from_span(
+                function_expr.name.get_span(),
+                format!("Functions can only be defined once, but \"{}\" is redefined here", function_name),
+                ErrorKind::TypeCheckError
+            ));
             return;
         }
 
         let generic_types = function_expr.generic_parameters.as_ref().map(|g| g.parameters.iter()
             .map(|function_generic_parameter| {
                 let TokenEnum::Identifier(generic_name_str) = &function_generic_parameter.name.kind else {unreachable!()};
-                Generic::new(generic_name_str.clone(), None, &mut self.all_references)
+                if let Some(type_restriction) = &function_generic_parameter.type_restriction {
+                    let restricted_type = self.check_type_expression(type_restriction, &vec![], error_tracker);
+                    (generic_name_str.as_str(), Generic::new_specific_based(generic_name_str.clone(),  restricted_type))
+                } else {
+                    (generic_name_str.as_str(), Generic::new_requirement_based(generic_name_str.clone(), None, &mut self.all_references))
+                }
             })
             .collect()
         ).unwrap_or(vec![]);
@@ -119,12 +134,22 @@ impl TypeChecker {
         }
     }
 
-    fn half_check_base_function_expression(&mut self, base_function_exp: &BaseFunctionExpression, generic_types: &Vec<Type>, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Function {
+    fn half_check_base_function_expression(&mut self, base_function_exp: &BaseFunctionExpression, generic_types: &Vec<(&str, Type)>, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Function {
         let parameters : Vec<_> = base_function_exp.parameters.iter().map(|FunctionParameter { name, parameter_type, .. }| {
             let TokenEnum::Identifier(name) = &name.kind else {unreachable!()};
-            let t = self.check_type_expression(parameter_type, generic_types, error_tracker);
-            (name.clone(), t)
+            let param_type = self.check_type_expression(parameter_type, generic_types, error_tracker);
+            (name.clone(), param_type)
         }).collect();
+
+        let mut generic_parameter_map = HashMap::with_capacity(generic_types.len());
+        for (i, (_, param_type)) in parameters.iter().enumerate() {
+            let used_generics = param_type.get_used_generics(&self.all_references);
+            for generic_name in used_generics {
+                generic_parameter_map.entry(generic_name)
+                    .or_insert(i);
+            }
+        }
+        generic_parameter_map.shrink_to_fit();
 
         let return_type = base_function_exp.return_type.as_ref()
             .map(|return_type| self.check_type_expression(&return_type.return_type, generic_types, error_tracker))
@@ -138,6 +163,7 @@ impl TypeChecker {
         let new_scope_id = self.all_scopes.insert(function_scope);
         Function {
             parameters,
+            generic_parameter_map,
             returns: return_type,
             scope_id: new_scope_id,
         }
@@ -242,7 +268,8 @@ impl TypeChecker {
                 let function = self.all_scopes
                     .get(&scope_id)
                     .functions.get(function_name)
-                    .unwrap();
+                    .unwrap()
+                    .clone();
 
                 let function_arguments_length = function.parameters.len();
                 let supplied_arguments_length = call_expr.arguments.len();
@@ -263,27 +290,18 @@ impl TypeChecker {
                     ));
                     return function_return_type;
                 }
-                let parameters = function.parameters.clone();
                 // Check and get argument types
                 let arguments: Vec<_> = call_expr.arguments.iter().map(|expr| {
                     (self.check_types_recursive(expr, current_scope_id, error_tracker), expr.get_span())
                 }).collect();
-                // Replace generic return type with known input argument type
-                if let Type::Reference(return_type_id) = &function_return_type {
-                    if let Type::Generic(_) = self.all_references.get(return_type_id) {
-                        let generic_return_argument_index = parameters.iter()
-                            .enumerate()
-                            .find_map(|(i, (_, parm_type))| {
-                                match parm_type {
-                                    Type::Reference(parm_id) if parm_id == return_type_id => Some(i),
-                                    _ => None,
-                                }
-                        });
-                        if let Some(i) = generic_return_argument_index {
-                            function_return_type = arguments[i].0.clone();
-                        }
-                    }
-                }
+                // Try to replace generic types in return type with known types from the arguments
+                function_return_type.replace_type_generics(
+                    &function.generic_parameter_map,
+                    &arguments.iter()
+                        .map(|(t, _)| t)
+                        .collect(),
+                    &mut self.all_references
+                );
                 // Check if function call is done to a function that is currently being checked. Aka a recursive call
                 // The argument validly is not describable here, because the called function is not yet fully checked. This is important for generic requirements on the parameters, that might not be known yet.
                 if let Some((_, call_infos)) = self.function_recursive_calls_check_stack.iter_mut().find(|(name, _)| function_name == name) {
@@ -291,7 +309,7 @@ impl TypeChecker {
                     return function_return_type;
                 }
                 // Check if the arguments are valid
-                self.check_call_expression_argument_validity(&parameters, &arguments, error_tracker);
+                self.check_call_expression_argument_validity(&function.parameters, &arguments, error_tracker);
                 function_return_type
             },
             None => {

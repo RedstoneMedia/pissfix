@@ -4,6 +4,7 @@ use crate::r#type::Type;
 #[derive(Debug, Clone)]
 pub(crate)struct Function {
     pub parameters: Vec<(String, Type)>,
+    pub generic_parameter_map: HashMap<String, usize>, // Maps a name of a generic type to a index of a parameter, that uses that generic
     pub returns: Type,
     pub scope_id: u64,
 }

@@ -38,6 +38,14 @@ fun avg(s: Str) -> Flt {
     }
     sum / length(splits)
 }
+
+fun union_generic_stuff<T: Str | Int | Flt>(v: Arr<T>) -> T {
+    v[0] + v[1]
+}
+
+t = union_generic_stuff([5, 12]) # Type t should now be a Int
+t + 5
+
 # Should be 830
 test_eq(round(avg("849\\n814\\n906\\n800\\n791\\n807\\n841")), 830)
 
