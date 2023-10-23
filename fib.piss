@@ -39,11 +39,19 @@ fun avg(s: Str) -> Flt {
     sum / length(splits)
 }
 
-fun union_generic_stuff<T: Str | Int | Flt>(v: Arr<T>) -> T {
+fun union_generic_stuff<T: Int | Str>(v: T) -> T {
+    println(v)
+    v
+}
+s = normal_union_test("Something")
+s += 5 # FIXME: This should not be valid, because s should be a Str
+s = normal_union_test([]) # FIXME: Should not be valid
+
+# FIXME: Unions behind references (So for example in arrays) still break everything
+fun union_generic_stuff_arr<T: Str | Int | Flt>(v: Arr<T>) -> T {
     v[0] + v[1]
 }
-
-t = union_generic_stuff([5, 12]) # Type t should now be a Int
+t = union_generic_stuff_arr([5, 12])
 t + 5
 
 # Should be 830

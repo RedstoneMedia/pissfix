@@ -3,7 +3,7 @@ use crate::errors::{Error, ErrorKind, ErrorTracker};
 use crate::{GetSpan, Span};
 use crate::node::Node;
 use crate::node::prelude::*;
-use crate::r#type::{AllReferences, Generic, TypeRequirement, Type, TypeRequirements, GenericBase};
+use crate::r#type::{AllReferences, Generic, TypeRequirement, Type, TypeRequirements};
 use crate::scope::{AllScopes, Function, Scope};
 use crate::token::TokenEnum;
 

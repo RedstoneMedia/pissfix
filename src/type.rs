@@ -331,68 +331,75 @@ impl Type {
         }
     }
 
-    fn ref_expect_to_be(&self, expected_type_id: &usize, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
+    fn ref_expect_to_be(&self, expected: &Type, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
+        let (reference_id, left) = match (self, expected) {
+            (Type::Reference(a_id), Type::Reference(r_id)) => {
+                if a_id == r_id {
+                    return true;
+                }
+                (r_id, self)
+            }
+            (_, Type::Reference(id)) => (id, self),
+            (Type::Reference(id), _) => (id, expected),
+            _ => panic!("ref_expect_to_be called with no references"),
+        };
         let mut ref_type = Default::default();
-        std::mem::swap(&mut ref_type, all_references.get_mut(expected_type_id));
-        let r = match (self, &mut ref_type) {
-            (Type::Reference(actual_ref_id), Type::Generic(generic)) => {
-                assert_ne!(actual_ref_id, expected_type_id);
+        std::mem::swap(&mut ref_type, all_references.get_mut(reference_id));
+        let r = match (left, &mut ref_type) {
+            (Type::Reference(ref actual_ref_id), Type::Generic(generic)) => {
+                assert_ne!(actual_ref_id, reference_id);
                 let actual_ref_type = all_references.get(actual_ref_id);
                 match actual_ref_type {
-                    Type::Generic(_) | Type::Unknown(_) => generic.ensure_fulfills(self, all_references, in_fn_call),
-                    _ if in_fn_call => generic.ensure_fulfills(self, all_references, in_fn_call),
+                    Type::Generic(_) | Type::Unknown(_) => generic.ensure_fulfills(left, all_references, in_fn_call),
+                    _ if in_fn_call => generic.ensure_fulfills(left, all_references, in_fn_call),
                     _ => false,
                 }
             },
-            (Type::Reference(actual_ref_id), Type::Unknown(requirements)) => {
-                assert_ne!(actual_ref_id, expected_type_id);
+            (Type::Reference(ref actual_ref_id), Type::Unknown(requirements)) => {
+                assert_ne!(actual_ref_id, reference_id);
                 let actual_ref_type = all_references.get(actual_ref_id);
                 match actual_ref_type {
-                    Type::Unknown(_) | Type::Generic(_) => requirements.ensure_fulfills(self, all_references, in_fn_call),
+                    Type::Unknown(_) | Type::Generic(_) => requirements.ensure_fulfills(left, all_references, in_fn_call),
                     _ => {
-                        let r = requirements.ensure_fulfills(self, all_references, in_fn_call); // Different from generics: Expect to be is legal not only when the other type is a unknown
-                        ref_type = self.clone(); // Unknown gets collapsed to real type
+                        let r = requirements.ensure_fulfills(left, all_references, in_fn_call); // Different from generics: Expect to be is legal not only when the other type is a unknown
+                        ref_type = left.clone(); // Unknown gets collapsed to real type
                         r
                     }
                 }
             },
             (_, Type::Generic(generic)) => {
                 if in_fn_call {
-                    generic.ensure_fulfills(self, all_references, in_fn_call)
+                    generic.ensure_fulfills(left, all_references, in_fn_call)
                 } else {
                     false
                 }
             }
             (_, Type::Unknown(requirements)) => {
-                let r = requirements.ensure_fulfills(self, all_references, in_fn_call);
-                ref_type = self.clone();
+                let r = requirements.ensure_fulfills(left, all_references, in_fn_call);
+                ref_type = left.clone();
                 r
             }
             (_, _) => {
-                self.expect_to_be(&ref_type, all_references, in_fn_call)
+                left.expect_to_be( &ref_type, all_references, in_fn_call)
             }
         };
-        std::mem::swap(&mut ref_type, all_references.get_mut(expected_type_id));
+        std::mem::swap(&mut ref_type, all_references.get_mut(reference_id));
         r
     }
 
     pub(crate) fn expect_to_be(&self, expected: &Type, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
+        //println!("{:?} {:?}", self, expected);
         match (expected, self) {
-            (Type::Reference(r_id), Type::Reference(a_id)) => {
-                if r_id == a_id {
-                    return true;
-                }
-                self.ref_expect_to_be(r_id, all_references, in_fn_call) //&& expected.ref_expect_to_be(a_id, all_references, in_fn_call)
-            },
-            (Type::Reference(r_id), _) => self.ref_expect_to_be(r_id, all_references, in_fn_call),
-            (_, Type::Reference(a_id)) => expected.ref_expect_to_be(a_id, all_references, in_fn_call), // Does not work because expected becomes actual here
+            (_, Type::Reference(_)) | (Type::Reference(_), _) => {
+                self.ref_expect_to_be(expected, all_references, in_fn_call)
+            }
             (Type::Generic(gen), _) => {
                 match &gen.base {
                     GenericBase::Requirements(_) => unreachable!("Generic requirements are always behind reference"),
                     GenericBase::Specific(t) => self.expect_to_be(&t, all_references, in_fn_call)
                 }
             }
-            (_, Type::Generic(gen)) => { // e a
+            (_, Type::Generic(gen)) => {
                 match &gen.base {
                     GenericBase::Requirements(_) => unreachable!("Generic requirements are always behind reference"),
                     GenericBase::Specific(t) => t.expect_to_be(expected, all_references, in_fn_call)
