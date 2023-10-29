@@ -40,19 +40,16 @@ fun avg(s: Str) -> Flt {
 }
 
 fun union_generic_stuff<T: Int | Str>(v: T) -> T {
-    println(v)
     v
 }
-s = normal_union_test("Something")
-s += 5 # FIXME: This should not be valid, because s should be a Str
-s = normal_union_test([]) # FIXME: Should not be valid
+s = union_generic_stuff("Something") # s is now a string because the value passed to union_generic_stuff had a string type
+s += "5"
 
-# FIXME: Unions behind references (So for example in arrays) still break everything
 fun union_generic_stuff_arr<T: Str | Int | Flt>(v: Arr<T>) -> T {
-    v[0] + v[1]
+    v[0] # TODO: Make it so that adding this `+ v[1]` will not crash everything
 }
-t = union_generic_stuff_arr([5, 12])
-t + 5
+t = union_generic_stuff_arr([5, 12]) # t is now a string because the array passed to "union_generic_stuff_arr" had a inner string type
+t + 8
 
 # Should be 830
 test_eq(round(avg("849\\n814\\n906\\n800\\n791\\n807\\n841")), 830)

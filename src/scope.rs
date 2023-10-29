@@ -1,10 +1,10 @@
 use std::collections::HashMap;
-use crate::r#type::Type;
+use crate::r#type::{GenericPath, Type};
 
 #[derive(Debug, Clone)]
 pub(crate)struct Function {
     pub parameters: Vec<(String, Type)>,
-    pub generic_parameter_map: HashMap<String, usize>, // Maps a name of a generic type to a index of a parameter, that uses that generic
+    pub generic_parameter_map: HashMap<String, GenericPath>, // Maps a name of a generic type to a path towards that generic in the parameters
     pub returns: Type,
     pub scope_id: u64,
 }

@@ -332,26 +332,27 @@ impl Type {
     }
 
     fn ref_expect_to_be(&self, expected: &Type, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
-        let (reference_id, left) = match (self, expected) {
+        let (reference_id, other_type, swapped) = match (self, expected) {
             (Type::Reference(a_id), Type::Reference(r_id)) => {
                 if a_id == r_id {
                     return true;
                 }
-                (r_id, self)
+                (r_id, self, false)
             }
-            (_, Type::Reference(id)) => (id, self),
-            (Type::Reference(id), _) => (id, expected),
+            (_, Type::Reference(id)) => (id, self, false),
+            (Type::Reference(id), _) => (id, expected, true),
             _ => panic!("ref_expect_to_be called with no references"),
         };
         let mut ref_type = Default::default();
         std::mem::swap(&mut ref_type, all_references.get_mut(reference_id));
-        let r = match (left, &mut ref_type) {
+        // TODO: Keep "actual, expected" order the same when possible using swapped var (for example possible on specific generics)
+        let r = match (other_type, &mut ref_type) {
             (Type::Reference(ref actual_ref_id), Type::Generic(generic)) => {
                 assert_ne!(actual_ref_id, reference_id);
                 let actual_ref_type = all_references.get(actual_ref_id);
                 match actual_ref_type {
-                    Type::Generic(_) | Type::Unknown(_) => generic.ensure_fulfills(left, all_references, in_fn_call),
-                    _ if in_fn_call => generic.ensure_fulfills(left, all_references, in_fn_call),
+                    Type::Generic(_) | Type::Unknown(_) => generic.ensure_fulfills(other_type, all_references, in_fn_call),
+                    _ if in_fn_call => generic.ensure_fulfills(other_type, all_references, in_fn_call),
                     _ => false,
                 }
             },
@@ -359,28 +360,28 @@ impl Type {
                 assert_ne!(actual_ref_id, reference_id);
                 let actual_ref_type = all_references.get(actual_ref_id);
                 match actual_ref_type {
-                    Type::Unknown(_) | Type::Generic(_) => requirements.ensure_fulfills(left, all_references, in_fn_call),
+                    Type::Unknown(_) | Type::Generic(_) => requirements.ensure_fulfills(other_type, all_references, in_fn_call),
                     _ => {
-                        let r = requirements.ensure_fulfills(left, all_references, in_fn_call); // Different from generics: Expect to be is legal not only when the other type is a unknown
-                        ref_type = left.clone(); // Unknown gets collapsed to real type
+                        let r = requirements.ensure_fulfills(other_type, all_references, in_fn_call); // Different from generics: Expect to be is legal not only when the other type is a unknown
+                        ref_type = other_type.clone(); // Unknown gets collapsed to real type
                         r
                     }
                 }
             },
             (_, Type::Generic(generic)) => {
-                if in_fn_call {
-                    generic.ensure_fulfills(left, all_references, in_fn_call)
-                } else {
-                    false
-                }
+                generic.ensure_fulfills(other_type, all_references, in_fn_call)
             }
             (_, Type::Unknown(requirements)) => {
-                let r = requirements.ensure_fulfills(left, all_references, in_fn_call);
-                ref_type = left.clone();
+                let r = requirements.ensure_fulfills(other_type, all_references, in_fn_call);
+                ref_type = other_type.clone();
                 r
             }
             (_, _) => {
-                left.expect_to_be( &ref_type, all_references, in_fn_call)
+                if swapped {
+                    ref_type.expect_to_be(&other_type, all_references, in_fn_call)
+                } else {
+                    other_type.expect_to_be(&ref_type, all_references, in_fn_call)
+                }
             }
         };
         std::mem::swap(&mut ref_type, all_references.get_mut(reference_id));
@@ -521,22 +522,37 @@ impl Type {
     }
 
     /// Get the names of the Generics, that are used by the type
-    pub(crate) fn get_used_generics(&self, all_references: &AllReferences) -> Vec<String> {
+    pub(crate) fn get_used_generics(&self, all_references: &AllReferences) -> Vec<GenericPath> {
         match self {
             Type::Lambda(lam) => vec![], // TODO: Implement
             Type::Tuple(inner_types) => inner_types.iter()
-                .map(|inner_type| inner_type.get_used_generics(all_references))
+                .enumerate()
+                .map(|(tuple_index, inner_type)| inner_type.get_used_generics(all_references)
+                    .into_iter()
+                    .map(move |mut path| {
+                        path.inside(GenericPathSegment::Tuple(tuple_index));
+                        path
+                    })
+                )
                 .flatten()
                 .collect(),
-            Type::Array(inner_ref_id) => all_references.get(inner_ref_id).get_used_generics(all_references),
+            Type::Array(inner_ref_id) => all_references.get(inner_ref_id)
+                .get_used_generics(all_references)
+                .into_iter()
+                .map(|mut path| {
+                    path.inside(GenericPathSegment::Inner);
+                    path
+                })
+                .collect()
+            ,
             Type::Reference(ref_id) => all_references.get(ref_id).get_used_generics(all_references),
-            Type::Generic(gen) => vec![gen.name.clone()],
+            Type::Generic(gen) => vec![GenericPath::new(gen)],
             Type::Union(_) => vec![], // There is no concrete way to know which variant of the union is going to be used. Consider a Type: `Str | T`. T could be used, or not depending on the situation
             _ => vec![]
         }
     }
 
-    pub(crate) fn replace_type_generics(&mut self, generic_map: &HashMap<String, usize>, real_types: &Vec<&Type>, all_references: &mut AllReferences) {
+    pub(crate) fn replace_type_generics(&mut self, generic_map: &HashMap<String, GenericPath>, real_types: &Vec<&Type>, all_references: &mut AllReferences) {
         let generic_name = match self {
             Type::Reference(return_type_id) => match all_references.get(return_type_id) {
                 Type::Generic(gen) => Some(gen.name.clone()),
@@ -562,8 +578,8 @@ impl Type {
             _ => None
         };
         if let Some(generic_name) = generic_name {
-            if let Some(param_index) = generic_map.get(&generic_name) {
-                *self = real_types[*param_index].clone();
+            if let Some(generic_path) = generic_map.get(&generic_name) {
+                *self = generic_path.get_real(real_types, all_references).expect("Could not get real path");
             }
         }
     }
@@ -577,6 +593,55 @@ impl Type {
             Type::Unknown(req) => Some(req),
             _ => {None}
         }
+    }
+
+}
+
+#[derive(Debug, Clone)]
+pub enum GenericPathSegment {
+    Parameter(usize),
+    Inner,
+    Tuple(usize)
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct GenericPath {
+    pub generic_name: String,
+    segments_stack: Vec<GenericPathSegment>
+}
+
+impl GenericPath {
+
+    pub fn new(generic: &Generic) -> Self {
+        Self {
+            generic_name: generic.name.clone(),
+            segments_stack: vec![],
+        }
+    }
+
+    pub(crate) fn inside(&mut self, segment: GenericPathSegment) {
+        self.segments_stack.push(segment);
+    }
+
+    fn get_real(&self, real_types: &Vec<&Type>, all_references: &AllReferences) -> Option<Type> {
+        let mut last_type : Option<Type> = None;
+        for segment in self.segments_stack.iter().rev() {
+            let mut new_type = match segment {
+                GenericPathSegment::Parameter(param_index) => real_types[*param_index].clone(),
+                GenericPathSegment::Inner => last_type.unwrap()
+                    .try_into_iter_inner(all_references)?,
+                GenericPathSegment::Tuple(tuple_index) => {
+                    let Some(Type::Tuple(tuple_elements)) = last_type else {return None};
+                    tuple_elements[*tuple_index].clone()
+                }
+            };
+            while let Type::Reference(ref_id) = &new_type {
+                new_type = all_references.get(ref_id).clone();
+            }
+            last_type = Some(new_type);
+
+        }
+        last_type
     }
 
 }

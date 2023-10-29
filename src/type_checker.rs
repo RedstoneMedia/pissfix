@@ -3,7 +3,7 @@ use crate::errors::{Error, ErrorKind, ErrorTracker};
 use crate::{GetSpan, Span};
 use crate::node::Node;
 use crate::node::prelude::*;
-use crate::r#type::{AllReferences, Generic, TypeRequirement, Type, TypeRequirements};
+use crate::r#type::{AllReferences, Generic, TypeRequirement, Type, TypeRequirements, GenericPathSegment};
 use crate::scope::{AllScopes, Function, Scope};
 use crate::token::TokenEnum;
 
@@ -142,11 +142,14 @@ impl TypeChecker {
         }).collect();
 
         let mut generic_parameter_map = HashMap::with_capacity(generic_types.len());
-        for (i, (_, param_type)) in parameters.iter().enumerate() {
-            let used_generics = param_type.get_used_generics(&self.all_references);
-            for generic_name in used_generics {
-                generic_parameter_map.entry(generic_name)
-                    .or_insert(i);
+        for (param_index, (_, param_type)) in parameters.iter().enumerate() {
+            let used_generics_paths = param_type.get_used_generics(&self.all_references);
+            for mut generic_path in used_generics_paths {
+                generic_parameter_map.entry(generic_path.generic_name.clone())
+                    .or_insert_with(|| {
+                        generic_path.inside(GenericPathSegment::Parameter(param_index));
+                        generic_path
+                    });
             }
         }
         generic_parameter_map.shrink_to_fit();
