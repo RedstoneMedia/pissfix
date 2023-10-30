@@ -116,7 +116,7 @@ impl TypeChecker {
         let (_, unchecked_recursive_calls) = self.function_recursive_calls_check_stack.pop().unwrap();
         // Check out function return type
         let function = self.all_scopes.get_mut(&current_scope_id).functions.get_mut(function_name).unwrap();
-        if !actual_return_type.expect_to_be(&function.returns, &mut self.all_references, false) {
+        if !actual_return_type.expect_to_be(&function.returns, &mut self.all_references, true) {
             error_tracker.add_error(Error::from_span(
                 function_expr.base.return_type.as_ref()
                          .map(|return_type|return_type.return_type.get_span())
@@ -177,7 +177,7 @@ impl TypeChecker {
         // Check out function return type
         let actual_return_type = self.check_types_recursive(&base_function_exp.body, function.scope_id, error_tracker);
         // TODO: expect_to_be is not correct here
-        if !actual_return_type.expect_to_be(&function.returns, &mut self.all_references, false) {
+        if !actual_return_type.expect_to_be(&function.returns, &mut self.all_references, true) {
             error_tracker.add_error(Error::from_span(
                 base_function_exp.return_type.as_ref()
                     .map(|return_type|return_type.return_type.get_span())

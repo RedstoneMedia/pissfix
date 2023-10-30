@@ -64,24 +64,24 @@ impl TypeRequirements {
         Type::Reference(id)
     }
 
-    fn ensure_fulfills(&mut self, t: &Type, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
+    fn ensure_fulfills(&mut self, t: &Type, all_references: &mut AllReferences, lax_context: bool) -> bool {
         if let Type::Reference(additional_requirements_id) = t {
             if let Some(additional_requirements) = all_references.get(additional_requirements_id).requirements().cloned() {
                 for requirement in additional_requirements.requirements {
-                    self.require(requirement, all_references, in_fn_call);
+                    self.require(requirement, all_references, lax_context);
                 }
                 return true; // Generics are always fulfilled, if the requirements are made to match
             }
         }
         self.requirements.iter()
             .all(|req| {
-                req.does_fulfill(t, all_references, in_fn_call)
+                req.does_fulfill(t, all_references, lax_context)
             })
     }
 
-    fn require(&mut self, mut requirement: TypeRequirement, all_references: &mut AllReferences, in_fn_call: bool) {
+    fn require(&mut self, mut requirement: TypeRequirement, all_references: &mut AllReferences, lax_context: bool) {
         let already_required = self.requirements.iter()
-            .any(|req| req.eq(&requirement, all_references, in_fn_call));
+            .any(|req| req.eq(&requirement, all_references, lax_context));
         if !already_required {
             // Always create inner generic for Index requirement
             if let TypeRequirement::Index(None) = requirement {
@@ -140,18 +140,18 @@ impl Generic {
 
     }
 
-    fn ensure_fulfills(&mut self, t: &Type, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
+    fn ensure_fulfills(&mut self, t: &Type, all_references: &mut AllReferences, lax_context: bool) -> bool {
         match &mut self.base {
-            GenericBase::Requirements(requirements) => requirements.ensure_fulfills(t, all_references, in_fn_call),
-            GenericBase::Specific(specific_type) => t.expect_to_be(specific_type, all_references, in_fn_call)
+            GenericBase::Requirements(requirements) => requirements.ensure_fulfills(t, all_references, lax_context),
+            GenericBase::Specific(specific_type) => t.expect_to_be(specific_type, all_references, lax_context)
         }
     }
 
-    fn require(&mut self, mut requirement: TypeRequirement, all_references: &mut AllReferences, in_fn_call: bool) {
+    fn require(&mut self, mut requirement: TypeRequirement, all_references: &mut AllReferences, lax_context: bool) {
         match &mut self.base {
             GenericBase::Requirements(requirements) => {
                 let already_required = requirements.requirements.iter()
-                    .any(|req| req.eq(&requirement, all_references, in_fn_call));
+                    .any(|req| req.eq(&requirement, all_references, lax_context));
                 if !already_required {
                     // Always create inner generic for Index requirement
                     if let TypeRequirement::Index(None) = requirement {
@@ -181,7 +181,7 @@ pub(crate) enum TypeRequirement {
 
 impl TypeRequirement {
 
-    pub fn does_fulfill(&self, t: &Type, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
+    pub fn does_fulfill(&self, t: &Type, all_references: &mut AllReferences, lax_context: bool) -> bool {
         let r = match (self, t) {
             (_, Type::Reference(id)) => {
                 let mut ref_type = Default::default();
@@ -189,43 +189,43 @@ impl TypeRequirement {
 
                 let r = match &mut ref_type {
                     Type::Generic(generic) => {
-                        generic.require(self.clone(), all_references, in_fn_call);
+                        generic.require(self.clone(), all_references, lax_context);
                         true
                     },
                     Type::Unknown(requirements) => {
-                        requirements.require(self.clone(), all_references, in_fn_call);
+                        requirements.require(self.clone(), all_references, lax_context);
                         true
                     }
                     _ => {
-                        self.does_fulfill(&ref_type, all_references, in_fn_call)
+                        self.does_fulfill(&ref_type, all_references, lax_context)
                     }
                 };
                 std::mem::swap(&mut ref_type, all_references.get_mut(id));
                 r
             },
             (_, Type::Union(types)) => {
-                types.iter().all(|t| self.does_fulfill(t, all_references, in_fn_call))
+                types.iter().all(|t| self.does_fulfill(t, all_references, lax_context))
             },
             (Self::Index(None) | Self::Iteration(None), Type::Array(_)) => true,
             (Self::Index(Some(inner_ref_id)) | Self::Iteration(Some(inner_ref_id)), Type::Array(inner)) => {
                 let mut ref_type = Default::default();
                 std::mem::swap(&mut ref_type, all_references.get_mut(inner_ref_id));
                 let r = if let Type::Generic(inner_generic) = &mut ref_type {
-                    inner_generic.ensure_fulfills(&Type::Reference(*inner), all_references, in_fn_call)
+                    inner_generic.ensure_fulfills(&Type::Reference(*inner), all_references, lax_context)
                 } else {
-                    ref_type.expect_to_be(&Type::Reference(*inner), all_references, in_fn_call)
+                    ref_type.expect_to_be(&Type::Reference(*inner), all_references, lax_context)
                 };
                 std::mem::swap(&mut ref_type, all_references.get_mut(inner_ref_id));
                 r
             }
             (Self::Index(None) | Self::Iteration(None), Type::String) => true,
             (Self::Index(Some(inner_ref_id)) | Self::Iteration(Some(inner_ref_id)), Type::String) => {
-                Type::Reference(*inner_ref_id).expect_to_be(&Type::String, all_references, in_fn_call) // TODO: Maybe change to Char type (when that exists)
+                Type::Reference(*inner_ref_id).expect_to_be(&Type::String, all_references, lax_context) // TODO: Maybe change to Char type (when that exists)
             }
             // Ranges can not be index only iterated over
             (Self::Iteration(None), Type::Range) => true,
             (Self::Iteration(Some(inner_ref_id)), Type::Range) => {
-                Type::Reference(*inner_ref_id).expect_to_be(&Type::Integer, all_references, in_fn_call)
+                Type::Reference(*inner_ref_id).expect_to_be(&Type::Integer, all_references, lax_context)
             },
             (Self::Negation, Type::Integer | Type::Float) => true,
             (
@@ -237,14 +237,14 @@ impl TypeRequirement {
                 | Self::Ord(with)
                 , _
             ) => {
-                t.expect_to_be(with, all_references, in_fn_call)
+                t.expect_to_be(with, all_references, lax_context)
             },
             _ => false
         };
         r
     }
 
-    fn eq(&self, other: &Self, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
+    fn eq(&self, other: &Self, all_references: &mut AllReferences, lax_context: bool) -> bool {
         if let (TypeRequirement::Index(id_a), TypeRequirement::Index(id_b)) = (self, other) {
             if id_a.is_none() || id_b.is_none() {
                 return true;
@@ -259,7 +259,7 @@ impl TypeRequirement {
             (TypeRequirement::Division(a), TypeRequirement::Division(b)) => (a, b),
             (_, _) => return false
         };
-        with_a.expect_to_be(with_b, all_references, in_fn_call)
+        with_a.expect_to_be(with_b, all_references, lax_context)
     }
 
     pub(crate) fn to_string(&self, all_references: &AllReferences) -> String {
@@ -331,7 +331,7 @@ impl Type {
         }
     }
 
-    fn ref_expect_to_be(&self, expected: &Type, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
+    fn ref_expect_to_be(&self, expected: &Type, all_references: &mut AllReferences, lax_context: bool) -> bool {
         let (reference_id, other_type, swapped) = match (self, expected) {
             (Type::Reference(a_id), Type::Reference(r_id)) => {
                 if a_id == r_id {
@@ -351,8 +351,8 @@ impl Type {
                 assert_ne!(actual_ref_id, reference_id);
                 let actual_ref_type = all_references.get(actual_ref_id);
                 match actual_ref_type {
-                    Type::Generic(_) | Type::Unknown(_) => generic.ensure_fulfills(other_type, all_references, in_fn_call),
-                    _ if in_fn_call => generic.ensure_fulfills(other_type, all_references, in_fn_call),
+                    Type::Generic(_) | Type::Unknown(_) => generic.ensure_fulfills(other_type, all_references, lax_context),
+                    _ if lax_context => generic.ensure_fulfills(other_type, all_references, lax_context),
                     _ => false,
                 }
             },
@@ -360,27 +360,27 @@ impl Type {
                 assert_ne!(actual_ref_id, reference_id);
                 let actual_ref_type = all_references.get(actual_ref_id);
                 match actual_ref_type {
-                    Type::Unknown(_) | Type::Generic(_) => requirements.ensure_fulfills(other_type, all_references, in_fn_call),
+                    Type::Unknown(_) | Type::Generic(_) => requirements.ensure_fulfills(other_type, all_references, lax_context),
                     _ => {
-                        let r = requirements.ensure_fulfills(other_type, all_references, in_fn_call); // Different from generics: Expect to be is legal not only when the other type is a unknown
+                        let r = requirements.ensure_fulfills(other_type, all_references, lax_context); // Different from generics: Expect to be is legal not only when the other type is a unknown
                         ref_type = other_type.clone(); // Unknown gets collapsed to real type
                         r
                     }
                 }
             },
             (_, Type::Generic(generic)) => {
-                generic.ensure_fulfills(other_type, all_references, in_fn_call)
+                generic.ensure_fulfills(other_type, all_references, lax_context)
             }
             (_, Type::Unknown(requirements)) => {
-                let r = requirements.ensure_fulfills(other_type, all_references, in_fn_call);
+                let r = requirements.ensure_fulfills(other_type, all_references, lax_context);
                 ref_type = other_type.clone();
                 r
             }
             (_, _) => {
                 if swapped {
-                    ref_type.expect_to_be(&other_type, all_references, in_fn_call)
+                    ref_type.expect_to_be(&other_type, all_references, lax_context)
                 } else {
-                    other_type.expect_to_be(&ref_type, all_references, in_fn_call)
+                    other_type.expect_to_be(&ref_type, all_references, lax_context)
                 }
             }
         };
@@ -388,25 +388,24 @@ impl Type {
         r
     }
 
-    pub(crate) fn expect_to_be(&self, expected: &Type, all_references: &mut AllReferences, in_fn_call: bool) -> bool {
-        //println!("{:?} {:?}", self, expected);
+    pub(crate) fn expect_to_be(&self, expected: &Type, all_references: &mut AllReferences, lax_context: bool) -> bool {
         match (expected, self) {
             (_, Type::Reference(_)) | (Type::Reference(_), _) => {
-                self.ref_expect_to_be(expected, all_references, in_fn_call)
+                self.ref_expect_to_be(expected, all_references, lax_context)
             }
             (Type::Generic(gen), _) => {
                 match &gen.base {
                     GenericBase::Requirements(_) => unreachable!("Generic requirements are always behind reference"),
-                    GenericBase::Specific(t) => self.expect_to_be(&t, all_references, in_fn_call)
+                    GenericBase::Specific(t) => self.expect_to_be(&t, all_references, lax_context)
                 }
             }
             (_, Type::Generic(gen)) => {
                 match &gen.base {
                     GenericBase::Requirements(_) => unreachable!("Generic requirements are always behind reference"),
-                    GenericBase::Specific(t) => t.expect_to_be(expected, all_references, in_fn_call)
+                    GenericBase::Specific(t) => t.expect_to_be(expected, all_references, lax_context)
                 }
             }
-            (Type::Any, _) | (_, Type::Any) if in_fn_call => true,
+            (Type::Any, _) | (_, Type::Any) if lax_context => true,
             (Type::Any, Type::Any) => true,
             (Type::Integer, Type::Integer) => true,
             (Type::Float, Type::Float) => true,
@@ -420,7 +419,7 @@ impl Type {
             },
             (Type::Tuple(expected_types), Type::Tuple(actual_types)) => {
                 for (sub_expected, sub_actual) in expected_types.iter().zip(actual_types) {
-                    if !sub_actual.expect_to_be(sub_expected, all_references, in_fn_call) {
+                    if !sub_actual.expect_to_be(sub_expected, all_references, lax_context) {
                         return false;
                     }
                 }
@@ -428,15 +427,16 @@ impl Type {
             }
             (Type::Tuple(expected_types), actual) => {
                 if expected_types.len() == 1 {
-                    actual.expect_to_be(&expected_types[0], all_references, in_fn_call)
+                    actual.expect_to_be(&expected_types[0], all_references, lax_context)
                 } else {
                     false
                 }
             }
             (Type::Array(inner_expected), Type::Array(inner_actual)) => {
-                Type::Reference(*inner_actual).expect_to_be(&Type::Reference(*inner_expected), all_references, in_fn_call)
+                Type::Reference(*inner_actual).expect_to_be(&Type::Reference(*inner_expected), all_references, lax_context)
             }
-            (expected, Type::Union(types_actual)) => {
+            // Unions can only be compared in a lenient context, because the concrete type of the unions at runtime might differ
+            (expected, Type::Union(types_actual)) if lax_context => {
                 let mut types_expected = Vec::new();
                 if let Type::Union(subtypes) = expected {
                     types_expected.extend(subtypes.iter());
@@ -452,28 +452,28 @@ impl Type {
                     .iter()
                     .all(|sub_actual| types_expected
                         .iter()
-                        .any(|sub_expected| sub_actual.expect_to_be(sub_expected, all_references, in_fn_call))
+                        .any(|sub_expected| sub_actual.expect_to_be(sub_expected, all_references, lax_context))
                     )
             },
-            (Type::Union(types_expected), actual) => {
+            (Type::Union(types_expected), actual) if lax_context => {
                 types_expected
                     .iter()
-                    .any(|sub_expected| actual.expect_to_be(sub_expected, all_references, in_fn_call))
+                    .any(|sub_expected| actual.expect_to_be(sub_expected, all_references, lax_context))
             },
             (_, _) => false
         }
     }
 
 
-    pub(crate) fn require(&self, requirement: TypeRequirement, all_generics: &mut AllReferences, in_fn_call: bool) -> Result<(), ()> {
-        if !requirement.does_fulfill(self, all_generics, in_fn_call) {
+    pub(crate) fn require(&self, requirement: TypeRequirement, all_generics: &mut AllReferences, lax_context: bool) -> Result<(), ()> {
+        if !requirement.does_fulfill(self, all_generics, lax_context) {
             return Err(());
         }
         if let Type::Reference(id) = self {
             let mut generic_type = Default::default();
             std::mem::swap(&mut generic_type, all_generics.get_mut(id));
             if let Type::Generic(generic) = &mut generic_type {
-                generic.require(requirement, all_generics, in_fn_call);
+                generic.require(requirement, all_generics, lax_context);
             }
             std::mem::swap(&mut generic_type, all_generics.get_mut(id));
         }
