@@ -580,6 +580,12 @@ impl TypeChecker {
             Node::AnonymousFunctionExpression(base_function_expression) => {
                 return Type::Lambda(Box::new(self.check_base_function_expression(base_function_expression, current_scope_id, error_tracker)))
             }
+            Node::StructExpression(struct_expression) => {
+                unimplemented!()
+            }
+            Node::EnumExpression(enum_expression) => {
+                unimplemented!()
+            }
             Node::WhileExpression(WhileExpression { condition, body, .. }) => {
                 let condition_type = self.check_types_recursive(condition, current_scope_id, error_tracker);
                 if !condition_type.expect_to_be(&Type::Boolean, &mut self.all_references, false) {

@@ -19,6 +19,21 @@ fun map<T>(over: T, f: Lam) -> T {
     over
 }
 
+struct CartCord {
+    x: Flt,
+    y: Flt
+}
+
+struct PolarCord {
+    angle: Flt,
+    distance: Flt
+}
+
+enum Cord {
+    CartCord(CartCord),
+    PolarCord(PolarCord)
+}
+
 # Should be Ifmmp!Xpsme"
 test_eq(map("Hello World!", (c: Str) -> Str {
     char_code = str_to_chars(c)[0]

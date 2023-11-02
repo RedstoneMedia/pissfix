@@ -207,6 +207,8 @@ impl Lexer {
             // Check for Keywords
             let token_kind = match identifier_string.as_str() {
                 "fun" => TokenEnum::FunctionKeyword,
+                "struct" => TokenEnum::StructKeyword,
+                "enum" => TokenEnum::EnumKeyword,
                 "return" => TokenEnum::ReturnKeyword,
                 "break" => TokenEnum::BreakKeyword,
                 "in" => TokenEnum::InKeyword,

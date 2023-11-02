@@ -212,6 +212,12 @@ impl CodeGenerator {
                 self.generate_base_function_code(base, &None, indent_level);
                 self.add_with_indent(" lam\n", indent_level);
             }
+            Node::StructExpression(struct_expr) => {
+                unimplemented!()
+            }
+            Node::EnumExpression(enum_expr) => {
+                unimplemented!()
+            }
             Node::WhileExpression(WhileExpression {condition, body , ..}) => {
                 // Modify body ast to include breaking when condition is met (calling the breakif function)
                 let mut modified_body = *body.clone();

@@ -15,6 +15,8 @@ pub enum TokenEnum {
     ForKeyword,
     ElseKeyword,
     FunctionKeyword,
+    StructKeyword,
+    EnumKeyword,
 
     InKeyword,
     ReturnKeyword,
