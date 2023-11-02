@@ -565,7 +565,7 @@ impl Type {
             Type::Array(inner_id) => {
                 let mut new_inner = all_references.get(inner_id).clone();
                 new_inner.replace_type_generics(generic_map, real_types, all_references);
-                *inner_id = all_references.insert(new_inner); // Don't always create new array reference (Maybe the replace_return_type_generics didn't do anything)
+                *inner_id = all_references.insert(new_inner); // TODO: Don't always create new array reference (Maybe the replace_return_type_generics didn't do anything)
                 None
             },
             Type::Union(inner_types) | Type::Tuple(inner_types) => {

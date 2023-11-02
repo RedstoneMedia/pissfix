@@ -42,14 +42,18 @@ fun avg(s: Str) -> Flt {
 fun union_generic_stuff<T: Int | Str>(v: T) -> T {
     v
 }
+
 s = union_generic_stuff("Something") # s is now a string because the value passed to union_generic_stuff had a string type
 s += "5"
+test_eq(s, "Something5")
 
 fun union_generic_stuff_arr<T: Str | Int | Flt>(v: Arr<T>) -> T {
     v[0] # TODO: Make it so that adding this `+ v[1]` will not crash everything
 }
+
 t = union_generic_stuff_arr([5, 12]) # t is now a string because the array passed to "union_generic_stuff_arr" had a inner string type
-t + 8
+t += 8
+test_eq(t, 13)
 
 # Should be 830
 test_eq(round(avg("849\\n814\\n906\\n800\\n791\\n807\\n841")), 830)

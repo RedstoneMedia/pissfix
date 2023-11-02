@@ -128,9 +128,11 @@ impl TypeChecker {
         }
         function.returns = actual_return_type;
         // Lastly check recursive calls
-        let parameters = function.parameters.clone();
-        for arguments in unchecked_recursive_calls {
-            self.check_call_expression_argument_validity(&parameters, &arguments, error_tracker);
+        if !unchecked_recursive_calls.is_empty() {
+            let function_clone = function.clone();
+            for arguments in unchecked_recursive_calls {
+                self.check_call_expression_argument_validity(&function_clone, &arguments, error_tracker);
+            }
         }
     }
 
@@ -251,12 +253,20 @@ impl TypeChecker {
         }
     }
 
-    fn check_call_expression_argument_validity(&mut self, parameters: &[(String, Type)], arguments: &[(Type, Span)], error_tracker : &mut ErrorTracker) {
-        for ((_, expected), (actual, actual_span)) in parameters.iter().zip(arguments.iter()) {
-            if !actual.expect_to_be(expected, &mut self.all_references, true) {
+    fn check_call_expression_argument_validity(
+        &mut self,
+        function: &Function,
+        arguments: &[(Type, Span)],
+        error_tracker : &mut ErrorTracker
+    ) {
+        let real_types : Vec<_> = arguments.iter().map(|(t,_)| t).collect();
+        for ((_, expected), (actual, actual_span)) in function.parameters.iter().zip(arguments.iter()) {
+            let mut expected_real = expected.clone();
+            expected_real.replace_type_generics(&function.generic_parameter_map, &real_types, &mut self.all_references);
+            if !actual.expect_to_be(&expected_real, &mut self.all_references, true) {
                 error_tracker.add_error(Error::from_span(
                     actual_span.clone(),
-                    format!("Function argument type does not match, expected: {}, but got: {}", expected.to_string(&self.all_references), actual.to_string(&self.all_references)),
+                    format!("Function argument type does not match, expected: {}, but got: {}", expected_real.to_string(&self.all_references), actual.to_string(&self.all_references)),
                     ErrorKind::TypeCheckError
                 ));
             }
@@ -312,7 +322,7 @@ impl TypeChecker {
                     return function_return_type;
                 }
                 // Check if the arguments are valid
-                self.check_call_expression_argument_validity(&function.parameters, &arguments, error_tracker);
+                self.check_call_expression_argument_validity(&function, &arguments, error_tracker);
                 function_return_type
             },
             None => {

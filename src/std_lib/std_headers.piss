@@ -1,6 +1,5 @@
 abs<T: Int | Flt>(x: T) -> T
 acos(x: Int | Flt) -> Flt
-and(a: Bool, b: Bool) -> Bool
 and(arr: Arr<Bool>) -> Bool
 append<T>(arr: Arr<T>, value: T) -> Arr<T>
 arr<T>(obj: T) -> Arr
