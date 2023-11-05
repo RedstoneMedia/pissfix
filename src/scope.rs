@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::r#type::{GenericPath, Type};
 
 #[derive(Debug, Clone)]
-pub(crate)struct Function {
+pub(crate) struct Function {
     pub parameters: Vec<(String, Type)>,
     pub generic_parameter_map: HashMap<String, GenericPath>, // Maps a name of a generic type to a path towards that generic in the parameters
     pub returns: Type,
@@ -18,7 +18,11 @@ pub(crate) struct Scope {
 
 impl Scope {
     pub fn new(parent_scope_id : Option<u64>) -> Self {
-        Self { functions: Default::default(), variables: Default::default(), parent_scope: parent_scope_id }
+        Self {
+            functions: Default::default(),
+            variables: Default::default(),
+            parent_scope: parent_scope_id
+        }
     }
 }
 

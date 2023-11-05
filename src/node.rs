@@ -15,6 +15,8 @@ mod base_function_expression;
 mod r#type;
 mod struct_expression;
 mod enum_expression;
+mod enum_instantiate_expression;
+mod struct_instantiate_expression;
 
 pub use crate::{GetSpan, Span};
 
@@ -22,6 +24,8 @@ pub(super) mod prelude {
     pub use crate::node::assignment_expression::AssignmentExpression;
     pub use crate::node::binary_expression::BinaryExpression;
     pub use crate::node::call_expression::CallExpression;
+    pub use crate::node::enum_instantiate_expression::EnumInstantiateExpression;
+    pub use crate::node::struct_instantiate_expression::StructInstantiateExpression;
     pub use crate::node::unary_expression::UnaryExpression;
     pub use crate::node::r#type::*;
     pub use crate::node::break_expression::BreakExpression;
@@ -49,6 +53,8 @@ pub enum Node {
     LiteralExpression(Token),
     IdentifierExpression(Token),
     CallExpression(CallExpression),
+    EnumInstantiateExpression(EnumInstantiateExpression),
+    StructInstantiateExpression(StructInstantiateExpression),
     ParenthesizedExpression(Box<Node>),
     AssignmentExpression(AssignmentExpression),
     ExpressionList(ExpressionList),
@@ -76,6 +82,8 @@ impl GetSpan for Node {
             Node::LiteralExpression(e) => e.get_span(),
             Node::IdentifierExpression(e) => e.get_span(),
             Node::CallExpression(e) => e.get_span(),
+            Node::StructInstantiateExpression(e) => e.get_span(),
+            Node::EnumInstantiateExpression(e) => e.get_span(),
             Node::ParenthesizedExpression(e) => e.get_span(),
             Node::AssignmentExpression(e) => e.get_span(),
             Node::ExpressionList(e) => e.get_span(),

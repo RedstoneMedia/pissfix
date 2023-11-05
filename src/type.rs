@@ -299,6 +299,8 @@ pub(crate) enum Type {
     Lambda(Box<Function>),
     Tuple(Vec<Type>),
     Array(usize),
+    Struct(String),
+    Enum(String),
     Any, // Acts like a union of all types
     Union(Vec<Type>),
     Reference(usize),
@@ -503,6 +505,7 @@ impl Type {
             Type::Array(inner) => format!("Array<{}>", all_references
                 .get(inner)
                 .to_string(all_references)),
+            Type::Struct(name) | Type::Enum(name) => name.clone(),
             Type::Union(types) => types.iter()
                 .map(|t| t.to_string(all_references))
                 .collect::<Vec<_>>()
@@ -517,7 +520,7 @@ impl Type {
                 let t = all_references.get(id);
                 t.to_string(all_references)
             }
-            Type::_None => "None".to_string()
+            Type::_None => "None".to_string(),
         }
     }
 

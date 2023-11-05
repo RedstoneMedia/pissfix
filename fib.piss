@@ -30,9 +30,14 @@ struct PolarCord {
 }
 
 enum Cord {
-    CartCord(CartCord),
-    PolarCord(PolarCord)
+    CartCord: CartCord,
+    PolarCord: PolarCord
 }
+
+cord = Cord:CartCord(CartCord {
+    x: 10.0,
+    y: 20.0
+})
 
 # Should be Ifmmp!Xpsme"
 test_eq(map("Hello World!", (c: Str) -> Str {

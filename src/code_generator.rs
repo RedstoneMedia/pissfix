@@ -134,6 +134,12 @@ impl CodeGenerator {
                 let TokenEnum::Identifier(ident) = &name.kind else {unreachable!()};
                 self.add_with_indent(&replace_function_ident(ident), indent_level);
             }
+            Node::StructInstantiateExpression(StructInstantiateExpression { name, fields, .. }) => {
+                unimplemented!()
+            }
+            Node::EnumInstantiateExpression(EnumInstantiateExpression { enum_name, variant_name, inner, .. }) => {
+                unimplemented!()
+            }
             Node::ParenthesizedExpression(node) => self.generate_code(node, indent_level),
             Node::AssignmentExpression(AssignmentExpression {to, value, ..}) => {
                 if let Node::IndexExpression(IndexExpression {index_value, index_into, ..}) = &**to {
@@ -213,10 +219,29 @@ impl CodeGenerator {
                 self.add_with_indent(" lam\n", indent_level);
             }
             Node::StructExpression(struct_expr) => {
-                unimplemented!()
+                let TokenEnum::Identifier(name) = &struct_expr.name.kind else {unreachable!()};
+                self.add_with_indent(&format!("{}: (\n", name), indent_level);
+                for field in &struct_expr.fields {
+                    let TokenEnum::Identifier(field_name) = &field.field_name.kind else {unreachable!()};
+                    let type_code = Self::get_type_expression_code(&field.field_type, &vec![]);
+                    self.add_with_indent(&format!("{} :{}\n", field_name, type_code), indent_level + 1);
+                }
+                self.add_with_indent(") datadef\n\n", indent_level);
             }
             Node::EnumExpression(enum_expr) => {
-                unimplemented!()
+                let TokenEnum::Identifier(name) = &enum_expr.name.kind else {unreachable!()};
+                self.add_with_indent(&format!("{}: {{\n", name), indent_level);
+                for variant in &enum_expr.variants {
+                    let TokenEnum::Identifier(variant_name) = &variant.variant_name.kind else {unreachable!()};
+                    let type_code = variant.inner.as_ref()
+                        .map(|inner| {
+                            let code = Self::get_type_expression_code(inner, &vec![]);
+                            format!("inner :{}", code)
+                        })
+                        .unwrap_or("".to_string());
+                    self.add_with_indent(&format!("{}: ({})\n", variant_name, type_code), indent_level + 1);
+                }
+                self.add_with_indent("} datadef\n\n", indent_level);
             }
             Node::WhileExpression(WhileExpression {condition, body , ..}) => {
                 // Modify body ast to include breaking when condition is met (calling the breakif function)

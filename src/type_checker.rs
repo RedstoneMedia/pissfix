@@ -7,11 +7,22 @@ use crate::r#type::{AllReferences, Generic, TypeRequirement, Type, TypeRequireme
 use crate::scope::{AllScopes, Function, Scope};
 use crate::token::TokenEnum;
 
+#[derive(Debug, Clone)]
+pub(crate) struct Struct {
+    pub fields: Vec<(String, Type)>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Enum {
+    pub variants: Vec<(String, Option<Type>)>,
+}
 
 #[derive(Debug, Default)]
 pub struct TypeChecker {
     all_scopes: AllScopes,
     all_references: AllReferences,
+    structs: HashMap<String, Struct>,
+    enums: HashMap<String, Enum>,
     function_recursive_calls_check_stack: Vec<(String, Vec<Vec<(Type, Span)>>)>
 }
 
@@ -41,6 +52,15 @@ impl TypeChecker {
         }) {
             return generic_type.clone();
         }
+
+        if let Some(_) = self.structs.get(type_name) {
+            return Type::Struct(type_name.clone());
+        }
+
+        if let Some(_) = self.enums.get(type_name) {
+            return Type::Enum(type_name.clone());
+        }
+
         match type_name.as_ref() {
             "Int" => Type::Integer,
             "Flt" => Type::Float,
@@ -512,6 +532,12 @@ impl TypeChecker {
             Node::CallExpression(call_expression) => {
                 return self.check_call_expression(call_expression, current_scope_id, error_tracker);
             }
+            Node::StructInstantiateExpression(StructInstantiateExpression { name, fields, .. }) => {
+                unimplemented!()
+            }
+            Node::EnumInstantiateExpression(EnumInstantiateExpression { enum_name, variant_name, inner, .. }) => {
+                unimplemented!()
+            }
             Node::ParenthesizedExpression(inner) => {
                 return self.check_types_recursive(inner, current_scope_id, error_tracker)
             }
@@ -581,10 +607,47 @@ impl TypeChecker {
                 return Type::Lambda(Box::new(self.check_base_function_expression(base_function_expression, current_scope_id, error_tracker)))
             }
             Node::StructExpression(struct_expression) => {
-                unimplemented!()
+                let TokenEnum::Identifier(struct_name) = struct_expression.name.kind.clone() else {unreachable!()};
+                if self.structs.contains_key(&struct_name) {
+                    error_tracker.add_error(Error::from_span(
+                        struct_expression.name.get_span(),
+                        format!("Struct {} is already defined", struct_name),
+                        ErrorKind::TypeCheckError
+                    ));
+                    return Type::_None;
+                }
+                let struct_fields : Vec<_> = struct_expression.fields.iter()
+                    .map(|field| {
+                        let TokenEnum::Identifier(field_name) = field.field_name.kind.clone() else {unreachable!()};
+                        let field_type = self.check_type_expression(&field.field_type, &vec![], error_tracker);
+                        (field_name, field_type)
+                    })
+                    .collect();
+                self.structs.insert(struct_name, Struct {
+                    fields: struct_fields,
+                });
             }
             Node::EnumExpression(enum_expression) => {
-                unimplemented!()
+                let TokenEnum::Identifier(enum_name) = enum_expression.name.kind.clone() else {unreachable!()};
+                if self.enums.contains_key(&enum_name) {
+                    error_tracker.add_error(Error::from_span(
+                        enum_expression.name.get_span(),
+                        format!("Enum {} is already defined", enum_name),
+                        ErrorKind::TypeCheckError
+                    ));
+                    return Type::_None;
+                }
+                let enum_variants: Vec<_> = enum_expression.variants.iter()
+                    .map(|variant| {
+                        let TokenEnum::Identifier(variant_name) = variant.variant_name.kind.clone() else {unreachable!()};
+                        let inner_type = variant.inner.as_ref()
+                            .map(|inner| self.check_type_expression(inner, &vec![], error_tracker));
+                        (variant_name, inner_type)
+                    })
+                    .collect();
+                self.enums.insert(enum_name, Enum {
+                    variants: enum_variants,
+                });
             }
             Node::WhileExpression(WhileExpression { condition, body, .. }) => {
                 let condition_type = self.check_types_recursive(condition, current_scope_id, error_tracker);

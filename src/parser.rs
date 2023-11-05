@@ -234,6 +234,113 @@ impl Parser {
         }))
     }
 
+    fn parse_struct_definition(&mut self, token: Token) -> Result<Node, Error> {
+        let struct_name_ident = self.next();
+        if let TokenEnum::Identifier(_) = struct_name_ident.kind {} else {
+            return Err(Error::from_span(
+                struct_name_ident.span,
+                format!("Struct keyword is always followed by an identifier, but got: {:?}", struct_name_ident),
+                ErrorKind::ParsingError)
+            );
+        }
+        let opening = self.next();
+        if opening.kind != TokenEnum::OpeningBrace {
+            return Err(Error::from_span(
+                opening.span,
+                format!("Struct body is always opened using a brace, but got: {:?}", opening),
+                ErrorKind::ParsingError
+            ));
+        }
+        let fields = self.parse_seperated_expressions_until(
+            &|t| t == TokenEnum::ClosingBrace,
+            |_self| {
+                let field_name_ident = _self.next();
+                if let TokenEnum::Identifier(_) = field_name_ident.kind {} else {
+                    return Err(Error::from_span(
+                        field_name_ident.span,
+                        format!("Expected struct field name, but got: {:?}", field_name_ident),
+                        ErrorKind::ParsingError
+                    ));
+                }
+                let colon = _self.next();
+                if colon.kind != TokenEnum::DoublePoint {
+                    return Err(Error::from_span(
+                        colon.span,
+                        format!("Expected colon after field identifier, but got: {:?}", colon),
+                        ErrorKind::ParsingError
+                    ));
+                }
+                Ok(StructField {
+                    field_name: field_name_ident,
+                    colon,
+                    field_type: _self.parse_type()?,
+                })
+            },
+            TokenEnum::Comma
+        )?;
+        let closing = self.next();
+        Ok(Node::StructExpression(StructExpression {
+            keyword: token,
+            name: struct_name_ident,
+            opening,
+            fields,
+            closing
+        }))
+    }
+
+    fn parse_enum_definition(&mut self, token: Token) -> Result<Node, Error> {
+        let struct_name_ident = self.next();
+        if let TokenEnum::Identifier(_) = struct_name_ident.kind {} else {
+            return Err(Error::from_span(
+                struct_name_ident.span,
+                format!("Enum keyword is always followed by an identifier, but got: {:?}", struct_name_ident),
+                ErrorKind::ParsingError)
+            );
+        }
+        let opening = self.next();
+        if opening.kind != TokenEnum::OpeningBrace {
+            return Err(Error::from_span(
+                opening.span,
+                format!("Enum body is always opened using a brace, but got: {:?}", opening),
+                ErrorKind::ParsingError
+            ));
+        }
+        let variants = self.parse_seperated_expressions_until(
+            &|t| t == TokenEnum::ClosingBrace,
+            |_self| {
+                let variant_name_ident = _self.next();
+                if let TokenEnum::Identifier(_) = variant_name_ident.kind {} else {
+                    return Err(Error::from_span(
+                        variant_name_ident.span,
+                        format!("Expected enum variant name, but got: {:?}", variant_name_ident),
+                        ErrorKind::ParsingError
+                    ));
+                }
+                let peeked_next = _self.peek_next(0);
+                let (inner_colon, inner_type) = if peeked_next.kind == TokenEnum::DoublePoint {
+                    _self.next_token += 1;
+                    (Some(peeked_next), Some(_self.parse_type()?))
+                } else {
+                    (None, None)
+                };
+                Ok(EnumVariant {
+                    variant_name: variant_name_ident,
+                    inner_colon,
+                    inner: inner_type,
+                })
+            },
+            TokenEnum::Comma
+        )?;
+        let closing = self.next();
+        Ok(Node::EnumExpression(EnumExpression {
+            keyword: token,
+            name: struct_name_ident,
+            opening,
+            variants,
+            closing
+        }))
+    }
+
     fn parse_sub_expression(&mut self, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<Node, Error> {
         let mut token = self.next();
         // Skip separator
@@ -241,151 +348,208 @@ impl Parser {
             token = self.next();
         }
 
-        //println!("parse sub expr : {:?}", token);
-        // TODO: Don't use this many else if lets
-        if token.kind.is_literal() {
-            Ok(Node::LiteralExpression(token))
-        } else if let TokenEnum::Identifier(_) = token.kind {
-            // Check for function call
-            let peeked_next = self.peek_next(0);
-            if peeked_next.kind == TokenEnum::OpeningParentheses {
-                self.next_token += 1;
-                return self.parse_function_call(token, last_precedence, error_tracker);
+        match token.kind {
+            TokenEnum::Identifier(_) => {
+                // Check for function call
+                let peeked_next = self.peek_next(0);
+                if peeked_next.kind == TokenEnum::OpeningParentheses {
+                    self.next_token += 1;
+                    return self.parse_function_call(token, last_precedence, error_tracker);
+                }
+                // Check for struct instantiation
+                if peeked_next.kind == TokenEnum::OpeningBrace {
+                    //self.next_token += 1;
+                    unimplemented!("Struct instantiation");
+                }
+                // Check for enum instantiation
+                if peeked_next.kind == TokenEnum::DoublePoint {
+                    self.next_token += 1;
+                    let variant_name_ident = self.next();
+                    let TokenEnum::Identifier(_) = variant_name_ident.kind else {
+                        return Err(Error::from_span(
+                            variant_name_ident.get_span(),
+                            format!("Expected variant name for enum instantiation"),
+                            ErrorKind::ParsingError
+                        ));
+                    };
+
+                    let inner_opening = self.peek_next(0);
+
+                    let mut expr = EnumInstantiateExpression {
+                        enum_name: token,
+                        colon: peeked_next,
+                        variant_name: variant_name_ident,
+                        inner_opening: None,
+                        inner: None,
+                        inner_closing: None,
+                    };
+
+                    if TokenEnum::OpeningParentheses == inner_opening.kind {
+                        self.next_token += 1;
+                        let inner_value = self.parse_expression_until(0, &|t| t == TokenEnum::ClosingParentheses, error_tracker)?;
+                        let inner_closing = self.tokens[self.next_token - 1].clone();
+                        expr.inner_opening = Some(inner_opening);
+                        expr.inner = Some(Box::new(inner_value));
+                        expr.inner_closing = Some(inner_closing);
+                    }
+                    return Ok(Node::EnumInstantiateExpression(expr));
+                }
+                Ok(Node::IdentifierExpression(token))
+            },
+            TokenEnum::OpeningParentheses => {
+                // Check for anonymous function first
+                let mut i = 0;
+                while self.peek_next(i).kind != TokenEnum::ClosingParentheses {
+                    i += 1;
+                }
+                // Check for possible arrow
+                let mut next = self.peek_next(i+1);
+                if next.kind == TokenEnum::Arrow {
+                    next = self.peek_next(i+3); // Skip arrow and Type
+                }
+                // If there is a '{' now then it's a anonymous function expression
+                if next.kind == TokenEnum::OpeningBrace {
+                    let base = self.parse_base_function_definition(token, last_precedence, stop_token_check, error_tracker)?;
+                    return Ok(Node::AnonymousFunctionExpression(base));
+                }
+                // Parse expression until ')' and parse as normal ParenthesizedExpression
+                let expression = self.parse_expression_until(0, &|t| t == TokenEnum::ClosingParentheses, error_tracker)?;
+                Ok(Node::ParenthesizedExpression(Box::new(expression)))
+            },
+            TokenEnum::OpeningBrace => {
+                // Skip separator if any
+                let peeked_next = self.peek_next(0);
+                if peeked_next.kind == TokenEnum::Separator || peeked_next.kind == TokenEnum::ClosingBrace {
+                    self.next_token += 1;
+                }
+                // Parse true branch until "}"
+                let expression_list = self.parse_expression_list_until(
+                    token,
+                    &Some(|t| t == TokenEnum::ClosingBrace),
+                    &|t| t == TokenEnum::Separator,
+                    error_tracker
+                );
+                Ok(expression_list)
             }
-            Ok(Node::IdentifierExpression(token))
-        } else if let TokenEnum::OpeningParentheses = token.kind {
-            // Check for anonymous function first
-            let mut i = 0;
-            while self.peek_next(i).kind != TokenEnum::ClosingParentheses {
-                i += 1;
+            TokenEnum::OpeningBracket => {
+                let expression_list = self.parse_expression_list_until(
+                    token,
+                    &Some(|t| t == TokenEnum::ClosingBracket),
+                    &|t| t == TokenEnum::Comma || t == TokenEnum::ClosingBracket,
+                    error_tracker
+                );
+                Ok(expression_list)
             }
-            // Check for possible arrow
-            let mut next = self.peek_next(i+1);
-            if next.kind == TokenEnum::Arrow {
-                next = self.peek_next(i+3); // Skip arrow and Type
+            TokenEnum::IfKeyword => {
+                // Parse condition
+                let condition_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
+                // Make "{" the token that will be acquired when calling next in parse_sub_expression
+                self.seperator_back_until(|t| t.kind == TokenEnum::OpeningBrace);
+                // Parse true branch
+                let mut true_branch_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+                true_branch_expression = make_wrapped_in_expression_list(true_branch_expression);
+                // Check for else keyword
+                let mut false_branch = None;
+                let peeked_next = self.peek_next(0);
+                if peeked_next.kind == TokenEnum::ElseKeyword {
+                    self.next_token += 1; // Skip else keyword
+                    let mut branch = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+                    branch = make_wrapped_in_expression_list(branch);
+                    false_branch = Some(Box::new(branch)); // Parse false branch
+                }
+                Ok(Node::IfExpression(IfExpression { keyword: token, condition: Box::new(condition_expression), true_branch: Box::new(true_branch_expression), false_branch }))
             }
-            // If there is a '{' now then it's a anonymous function expression
-            if next.kind == TokenEnum::OpeningBrace {
-                let base = self.parse_base_function_definition(token, last_precedence, stop_token_check, error_tracker)?;
-                return Ok(Node::AnonymousFunctionExpression(base));
+            TokenEnum::FunctionKeyword => {
+                self.parse_function_definition(token, last_precedence, stop_token_check, error_tracker)
             }
-            // Parse expression until ')' and parse as normal ParenthesizedExpression
-            let expression = self.parse_expression_until(0, &|t| t == TokenEnum::ClosingParentheses, error_tracker)?;
-            Ok(Node::ParenthesizedExpression(Box::new(expression)))
-        } else if token.kind.is_unary_operator_token() {
-            let expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
-            Ok(Node::UnaryExpression(UnaryExpression { operation: token, expression: Box::new(expression) }))
-        } else if let TokenEnum::OpeningBrace = token.kind {
-            // Skip separator if any
-            let peeked_next = self.peek_next(0);
-            if peeked_next.kind == TokenEnum::Separator || peeked_next.kind == TokenEnum::ClosingBrace {
-                self.next_token += 1;
+            TokenEnum::StructKeyword => {
+                self.parse_struct_definition(token)
             }
-            // Parse true branch until "}"
-            let expression_list = self.parse_expression_list_until(
-                token,
-                &Some(|t| t == TokenEnum::ClosingBrace),
-                &|t| t == TokenEnum::Separator,
-                error_tracker
-            );
-            Ok(expression_list)
-        } else if let TokenEnum::OpeningBracket = token.kind {
-            let expression_list = self.parse_expression_list_until(
-                token,
-                &Some(|t| t == TokenEnum::ClosingBracket),
-                &|t| t == TokenEnum::Comma || t == TokenEnum::ClosingBracket,
-                error_tracker
-            );
-            Ok(expression_list)
-        } else if let TokenEnum::IfKeyword = token.kind {
-            // Parse condition
-            let condition_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
-            // Make "{" the token that will be acquired when calling next in parse_sub_expression
-            self.seperator_back_until(|t| t.kind == TokenEnum::OpeningBrace);
-            // Parse true branch
-            let mut true_branch_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
-            true_branch_expression = make_wrapped_in_expression_list(true_branch_expression);
-            // Check for else keyword
-            let mut false_branch = None;
-            let peeked_next = self.peek_next(0);
-            if peeked_next.kind == TokenEnum::ElseKeyword {
-                self.next_token += 1; // Skip else keyword
-                let mut branch = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
-                branch = make_wrapped_in_expression_list(branch);
-                false_branch = Some(Box::new(branch)); // Parse false branch
+            TokenEnum::EnumKeyword => {
+                self.parse_enum_definition(token)
             }
-            Ok(Node::IfExpression(IfExpression { keyword: token, condition: Box::new(condition_expression), true_branch: Box::new(true_branch_expression), false_branch }))
-        } else if let TokenEnum::FunctionKeyword = token.kind {
-            self.parse_function_definition(token, last_precedence, stop_token_check, error_tracker)
-        } else if let TokenEnum::WhileKeyword = token.kind {
-            // Parse condition
-            let condition_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
-            let is_ok_condition = match &condition_expression {
-                Node::FunctionExpression(_) => false,
-                Node::ReturnExpression(_) => false,
-                Node::BreakExpression(_) => false,
-                Node::CommentExpression(_) => false,
-                _ => true
-            };
-            if !is_ok_condition {
-                return Err(Error::from_span(
-                    condition_expression.get_span(),
-                    format!("Unexpected condition for while loop: {:?}", condition_expression),
-                    ErrorKind::ParsingError
-                ));
+            TokenEnum::WhileKeyword => {
+                // Parse condition
+                let condition_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
+                let is_ok_condition = match &condition_expression {
+                    Node::FunctionExpression(_) => false,
+                    Node::ReturnExpression(_) => false,
+                    Node::BreakExpression(_) => false,
+                    Node::CommentExpression(_) => false,
+                    _ => true
+                };
+                if !is_ok_condition {
+                    return Err(Error::from_span(
+                        condition_expression.get_span(),
+                        format!("Unexpected condition for while loop: {:?}", condition_expression),
+                        ErrorKind::ParsingError
+                    ));
+                }
+                // Make "{" the token that will be acquired when calling next in parse_sub_expression
+                self.seperator_back_until(|t| t.kind == TokenEnum::OpeningBrace);
+                // Parse while body
+                let body_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+                Ok(Node::WhileExpression(WhileExpression { keyword: token, condition: Box::new(condition_expression), body: Box::new(body_expression) }))
             }
-            // Make "{" the token that will be acquired when calling next in parse_sub_expression
-            self.seperator_back_until(|t| t.kind == TokenEnum::OpeningBrace);
-            // Parse while body
-            let body_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
-            Ok(Node::WhileExpression(WhileExpression { keyword: token, condition: Box::new(condition_expression), body: Box::new(body_expression) }))
-        } else if let TokenEnum::ForKeyword = token.kind {
-            // Check iteration variable type
-            let iteration_variable = self.next();
-            match iteration_variable.kind {
-                TokenEnum::Identifier(_) => {},
-                TokenEnum::Underscore => {},
-                _ => return Err(Error::from_span(
-                    iteration_variable.span,
-                    format!("Unexpected iteration variable in for loop: {:?}", iteration_variable),
-                    ErrorKind::ParsingError
-                ))
+            TokenEnum::ForKeyword => {
+                // Check iteration variable type
+                let iteration_variable = self.next();
+                match iteration_variable.kind {
+                    TokenEnum::Identifier(_) => {},
+                    TokenEnum::Underscore => {},
+                    _ => return Err(Error::from_span(
+                        iteration_variable.span,
+                        format!("Unexpected iteration variable in for loop: {:?}", iteration_variable),
+                        ErrorKind::ParsingError
+                    ))
+                }
+                let in_keyword = self.next();
+                if TokenEnum::InKeyword != in_keyword.kind {
+                    return Err(Error::from_span(
+                        in_keyword.span,
+                        format!("Expected \"in\" keyword, but got: {:?}", in_keyword),
+                        ErrorKind::ParsingError
+                    ))
+                }
+                // Parse range
+                let iterate_over_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
+                // Make "{" the token that will be acquired when calling next in parse_sub_expression
+                self.seperator_back_until(|t| t.kind == TokenEnum::OpeningBrace);
+                // Parse while body
+                let body_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+                Ok(Node::ForExpression(ForExpression {
+                    keyword: token,
+                    iteration_var: iteration_variable,
+                    in_keyword,
+                    iterate_over: Box::new(iterate_over_expression),
+                    body: Box::new(body_expression),
+                }))
             }
-            let in_keyword = self.next();
-            if TokenEnum::InKeyword != in_keyword.kind {
-                return Err(Error::from_span(
-                    in_keyword.span,
-                    format!("Expected \"in\" keyword, but got: {:?}", in_keyword),
-                    ErrorKind::ParsingError
-                ))
+            TokenEnum::ReturnKeyword => {
+                // TODO: Make providing a return value optional
+                let return_value_expression = self.parse_expression_until_line_end(stop_token_check, error_tracker)?;
+                self.next_token -= 1;  // Important to make self.peek_next(0) return a stop token so there is no unexpected operator token error
+                Ok(Node::ReturnExpression(ReturnExpression { keyword: token, expression: Box::new(return_value_expression) } ))
             }
-            // Parse range
-            let iterate_over_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
-            // Make "{" the token that will be acquired when calling next in parse_sub_expression
-            self.seperator_back_until(|t| t.kind == TokenEnum::OpeningBrace);
-            // Parse while body
-            let body_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
-            Ok(Node::ForExpression(ForExpression {
-                keyword: token,
-                iteration_var: iteration_variable,
-                in_keyword,
-                iterate_over: Box::new(iterate_over_expression),
-                body: Box::new(body_expression),
-            }))
-        } else if let TokenEnum::ReturnKeyword = token.kind {
-            // TODO: Make providing a return value optional
-            let return_value_expression = self.parse_expression_until_line_end(stop_token_check, error_tracker)?;
-            self.next_token -= 1;  // Important to make self.peek_next(0) return a stop token so there is no unexpected operator token error
-            Ok(Node::ReturnExpression(ReturnExpression { keyword: token, expression: Box::new(return_value_expression) } ))
-        } else if let TokenEnum::BreakKeyword = token.kind {
-            Ok(Node::BreakExpression(BreakExpression { keyword: token }))
-        } else if let TokenEnum::Comment(_) = token.kind {
-            Ok(Node::CommentExpression(CommentExpression {
-                comment: token,
-                on: None
-            }))
-        } else {
-            Err(Error::from_span(token.span,format!("Unexpected sub expression token: {:?}", token), ErrorKind::ParsingError))
+            TokenEnum::BreakKeyword => {
+                Ok(Node::BreakExpression(BreakExpression { keyword: token }))
+            }
+            TokenEnum::Comment(_) => {
+                Ok(Node::CommentExpression(CommentExpression {
+                    comment: token,
+                    on: None
+                }))
+            }
+            _ if token.kind.is_unary_operator_token() => {
+                let expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+                Ok(Node::UnaryExpression(UnaryExpression { operation: token, expression: Box::new(expression) }))
+            }
+            _ if token.kind.is_literal() => {
+                Ok(Node::LiteralExpression(token))
+            }
+            _ => {
+                Err(Error::from_span(token.span,format!("Unexpected sub expression token: {:?}", token), ErrorKind::ParsingError))
+            }
         }
     }
 
@@ -519,16 +683,22 @@ impl Parser {
             if TokenEnum::Separator == new_token.kind {continue;}
             self.next_token -= 1;
             expressions.push(parse_one(self)?);
-            let ending_token = self.next();
+            let mut ending_token = self.next();
+            // Ignore separators
+            while ending_token.kind == TokenEnum::Separator {
+                ending_token = self.next();
+            }
+            // Check if at end of list
             if stop_token_check(ending_token.kind.clone()) {
                 self.next_token -= 1;
                 break;
             }
+            // Check for separator for next element
             if separator_token_kind != ending_token.kind {
                 self.next_token -= 1;
                 return Err(Error::from_span(
-                    new_token.span,
-                    format!("Unexpected token in seperated list: {:?}", new_token),
+                    ending_token.span,
+                    format!("Unexpected token in seperated list: {:?}", ending_token),
                     ErrorKind::ParsingError
                 ))
             }
