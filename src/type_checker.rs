@@ -649,18 +649,24 @@ impl TypeChecker {
                 return Type::Array(inner_id);
             }
             Node::ExpressionList(ExpressionList { expressions, .. }) => {
-                let mut return_types = Vec::with_capacity(expressions.len());
+                let mut return_type = Type::_None;
                 for expr in expressions {
                     let t = self.check_types_recursive(expr, current_scope_id, error_tracker);
                     if let Type::_None = t {} else {
-                        return_types.push(t);
+                        if let Type::_None = return_type {} else {
+                            /*
+                            TODO: Maybe add back in when std lib is in
+                            error_tracker.add_error(Error::from_span(
+                                expr.get_span(),
+                                format!("Cannot return multiple values"),
+                                ErrorKind::TypeCheckError
+                            ));
+                            */
+                        }
+                        return_type = t;
                     }
                 }
-                return if let Some(t) = return_types.pop() {
-                    t
-                } else {
-                    Type::Tuple(return_types)
-                }
+                return return_type;
             }
             Node::IfExpression(IfExpression { keyword, condition, true_branch, false_branch, .. }) => {
                 let condition_type = self.check_types_recursive(condition, current_scope_id, error_tracker);

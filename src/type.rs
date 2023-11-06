@@ -297,7 +297,6 @@ pub(crate) enum Type {
     Boolean,
     Range,
     Lambda(Box<Function>),
-    Tuple(Vec<Type>),
     Array(usize),
     Struct(String),
     Enum(String),
@@ -327,7 +326,6 @@ impl Type {
                     .map(Type::Reference)
             },
             Type::Range => Some(Type::Integer),
-            Type::Tuple(types) => unimplemented!(),
             Type::Array(inner_id) => Some(Type::Reference(*inner_id)),
             _ => None
         }
@@ -421,21 +419,6 @@ impl Type {
                 // TODO: Implement
                 true
             },
-            (Type::Tuple(expected_types), Type::Tuple(actual_types)) => {
-                for (sub_expected, sub_actual) in expected_types.iter().zip(actual_types) {
-                    if !sub_actual.expect_to_be(sub_expected, all_references, lax_context) {
-                        return false;
-                    }
-                }
-                true
-            }
-            (Type::Tuple(expected_types), actual) => {
-                if expected_types.len() == 1 {
-                    actual.expect_to_be(&expected_types[0], all_references, lax_context)
-                } else {
-                    false
-                }
-            }
             (Type::Array(inner_expected), Type::Array(inner_actual)) => {
                 Type::Reference(*inner_actual).expect_to_be(&Type::Reference(*inner_expected), all_references, lax_context)
             }
@@ -500,10 +483,6 @@ impl Type {
                     .join(", "),
                 func.returns.to_string(all_references)
             ),
-            Type::Tuple(inner) => format!("({})", inner.iter()
-                .map(|t| t.to_string(all_references))
-                .collect::<Vec<_>>()
-                .join(", ")),
             Type::Array(inner) => format!("Array<{}>", all_references
                 .get(inner)
                 .to_string(all_references)),
@@ -530,17 +509,6 @@ impl Type {
     pub(crate) fn get_used_generics(&self, all_references: &AllReferences) -> Vec<GenericPath> {
         match self {
             Type::Lambda(lam) => vec![], // TODO: Implement
-            Type::Tuple(inner_types) => inner_types.iter()
-                .enumerate()
-                .map(|(tuple_index, inner_type)| inner_type.get_used_generics(all_references)
-                    .into_iter()
-                    .map(move |mut path| {
-                        path.inside(GenericPathSegment::Tuple(tuple_index));
-                        path
-                    })
-                )
-                .flatten()
-                .collect(),
             Type::Array(inner_ref_id) => all_references.get(inner_ref_id)
                 .get_used_generics(all_references)
                 .into_iter()
@@ -573,7 +541,7 @@ impl Type {
                 *inner_id = all_references.insert(new_inner); // TODO: Don't always create new array reference (Maybe the replace_return_type_generics didn't do anything)
                 None
             },
-            Type::Union(inner_types) | Type::Tuple(inner_types) => {
+            Type::Union(inner_types) => {
                 for inner_type in inner_types {
                     inner_type.replace_type_generics(generic_map, real_types, all_references)
                 }
@@ -605,8 +573,7 @@ impl Type {
 #[derive(Debug, Clone)]
 pub enum GenericPathSegment {
     Parameter(usize),
-    Inner,
-    Tuple(usize)
+    Inner
 }
 
 #[derive(Debug, Clone)]
@@ -634,11 +601,7 @@ impl GenericPath {
             let mut new_type = match segment {
                 GenericPathSegment::Parameter(param_index) => real_types[*param_index].clone(),
                 GenericPathSegment::Inner => last_type.unwrap()
-                    .try_into_iter_inner(all_references)?,
-                GenericPathSegment::Tuple(tuple_index) => {
-                    let Some(Type::Tuple(tuple_elements)) = last_type else {return None};
-                    tuple_elements[*tuple_index].clone()
-                }
+                    .try_into_iter_inner(all_references)?
             };
             while let Type::Reference(ref_id) = &new_type {
                 new_type = all_references.get(ref_id).clone();
