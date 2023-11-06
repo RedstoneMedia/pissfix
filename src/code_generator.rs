@@ -115,7 +115,13 @@ impl CodeGenerator {
             Node::LiteralExpression(token) => {
                 let literal = match &token.kind {
                     TokenEnum::Number(number) => format!("{}", number),
-                    TokenEnum::FloatLiteral(float) => format!("{}", float),
+                    TokenEnum::FloatLiteral(float) => {
+                        let mut float_string = format!("{}", float);
+                        if !float_string.contains('.') {
+                            float_string += ".0"
+                        }
+                        float_string
+                    },
                     TokenEnum::BooleanLiteral(boolean) => format!("{}", boolean),
                     TokenEnum::StringLiteral(string) => format!("\"{}\"", string.replace('"', "\\\"")),
                     _ => unreachable!()
@@ -134,11 +140,23 @@ impl CodeGenerator {
                 let TokenEnum::Identifier(ident) = &name.kind else {unreachable!()};
                 self.add_with_indent(&replace_function_ident(ident), indent_level);
             }
-            Node::StructInstantiateExpression(StructInstantiateExpression { name, fields, .. }) => {
-                unimplemented!()
+            Node::StructInstantiateExpression(StructInstantiateExpression { name, pairs, .. }) => {
+                let TokenEnum::Identifier(name_string) = &name.kind else {unreachable!()};
+                for pair in pairs {
+                    // TODO: This is not correct as the order in the instantiation might not be the same as in the definition. To account for this we need the "structs" data from the type checker
+                    self.generate_code(&pair.value, indent_level);
+                    self.add_with_indent(" ", indent_level);
+                }
+                self.add_with_indent(&name_string.to_lowercase(), indent_level);
             }
-            Node::EnumInstantiateExpression(EnumInstantiateExpression { enum_name, variant_name, inner, .. }) => {
-                unimplemented!()
+            Node::EnumInstantiateExpression(EnumInstantiateExpression {variant_name, inner, .. }) => {
+                let TokenEnum::Identifier(mut variant_name) = variant_name.kind.clone() else {unreachable!()};
+                if let Some(inner) = inner {
+                    self.generate_code(inner, indent_level);
+                    self.add_with_indent(" ", indent_level);
+                    variant_name += "_";
+                }
+                self.add_with_indent(&variant_name.to_lowercase(), indent_level);
             }
             Node::ParenthesizedExpression(node) => self.generate_code(node, indent_level),
             Node::AssignmentExpression(AssignmentExpression {to, value, ..}) => {
@@ -233,6 +251,10 @@ impl CodeGenerator {
                 self.add_with_indent(&format!("{}: {{\n", name), indent_level);
                 for variant in &enum_expr.variants {
                     let TokenEnum::Identifier(variant_name) = &variant.variant_name.kind else {unreachable!()};
+                    let mut variant_name = variant_name.clone();
+                    if variant.inner.is_some() {
+                        variant_name += "_"; // We need to do this because otherwise the inner type might conflict with already created types (I LOVE Postfix)
+                    }
                     let type_code = variant.inner.as_ref()
                         .map(|inner| {
                             let code = Self::get_type_expression_code(inner, &vec![]);

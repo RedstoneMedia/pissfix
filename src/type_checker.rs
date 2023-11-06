@@ -532,11 +532,95 @@ impl TypeChecker {
             Node::CallExpression(call_expression) => {
                 return self.check_call_expression(call_expression, current_scope_id, error_tracker);
             }
-            Node::StructInstantiateExpression(StructInstantiateExpression { name, fields, .. }) => {
-                unimplemented!()
+            Node::StructInstantiateExpression(StructInstantiateExpression { name, pairs, .. }) => {
+                let TokenEnum::Identifier(struct_name) = name.kind.clone() else {unreachable!()};
+                let t_struct = self.structs.get(&struct_name);
+                if t_struct.is_none() {
+                    error_tracker.add_error(Error::from_span(
+                        name.get_span(),
+                        format!("Could not find any struct with name: \"{}\"", struct_name),
+                        ErrorKind::TypeCheckError
+                    ));
+                    return Type::_None;
+                }
+                for pair in pairs {
+                    let TokenEnum::Identifier(field_name_string) = &pair.field_name.kind else {unreachable!()};
+                    let actual_initialization_type = self.check_types_recursive(&pair.value, current_scope_id, error_tracker);
+                    let t_struct = self.structs.get(&struct_name).unwrap();
+                    let Some((_, expected_type)) = t_struct.fields.iter().find(|(real_field_name, _)| real_field_name == field_name_string) else {
+                        error_tracker.add_error(Error::from_span(
+                            pair.field_name.get_span(),
+                            format!("Struct \"{}\" does not have a field with the name: \"{}\"", struct_name, field_name_string),
+                            ErrorKind::TypeCheckError
+                        ));
+                        continue;
+                    };
+                    if !actual_initialization_type.expect_to_be(expected_type, &mut self.all_references, false) {
+                        error_tracker.add_error(Error::from_span(
+                            pair.value.get_span(),
+                            format!(
+                                    "Field \"{}\" on struct \"{}\" has type {}, but got: {}",
+                                    field_name_string,
+                                    struct_name,
+                                    expected_type.to_string(&self.all_references),
+                                    actual_initialization_type.to_string(&self.all_references)
+                            ),
+                            ErrorKind::TypeCheckError
+                        ));
+                    }
+                }
+                return Type::Struct(struct_name);
             }
             Node::EnumInstantiateExpression(EnumInstantiateExpression { enum_name, variant_name, inner, .. }) => {
-                unimplemented!()
+                let TokenEnum::Identifier(enum_name_string) = enum_name.kind.clone() else {unreachable!()};
+                let actual_inner = inner.as_ref()
+                    .map(|inner| self.check_types_recursive(inner, current_scope_id, error_tracker));
+                let t_enum = self.enums.get(&enum_name_string);
+                if t_enum.is_none() {
+                    error_tracker.add_error(Error::from_span(
+                        enum_name.get_span(),
+                        format!("Could not find any enum with name: \"{}\"", enum_name_string),
+                        ErrorKind::TypeCheckError
+                    ));
+                    return Type::_None;
+                }
+                let t_enum = t_enum.unwrap();
+                let TokenEnum::Identifier(variant_name_string) = variant_name.kind.clone() else {unreachable!()};
+                let Some((_, expected_inner)) = t_enum.variants.iter()
+                    .find(|(expected_variant_name, _)| expected_variant_name == &variant_name_string)
+                    else {
+                        error_tracker.add_error(Error::from_span(
+                            enum_name.get_span(),
+                            format!("Enum \"{}\" does not have a variant named: \"{}\"", enum_name_string, variant_name_string),
+                            ErrorKind::TypeCheckError
+                        ));
+                        return Type::_None;
+                };
+
+                if let Some(expected_inner) = expected_inner {
+                    let Some(actual_inner) = actual_inner else {
+                        error_tracker.add_error(Error::from_span(
+                            variant_name.get_span(),
+                            format!("Variant \"{}\" on enum \"{}\" requires inner type, but did not get one", variant_name_string, enum_name_string),
+                            ErrorKind::TypeCheckError
+                        ));
+                        return Type::Enum(enum_name_string);
+                    };
+                    if !actual_inner.expect_to_be(expected_inner, &mut self.all_references, false) {
+                        error_tracker.add_error(Error::from_span(
+                            inner.as_ref().unwrap().get_span(),
+                            format!(
+                                "Inner value of variant \"{}\" on enum \"{}\" has type {}, but got: {}",
+                                variant_name_string,
+                                enum_name_string,
+                                expected_inner.to_string(&self.all_references),
+                                actual_inner.to_string(&self.all_references)
+                            ),
+                            ErrorKind::TypeCheckError
+                        ));
+                    }
+                }
+                return Type::Enum(enum_name_string);
             }
             Node::ParenthesizedExpression(inner) => {
                 return self.check_types_recursive(inner, current_scope_id, error_tracker)

@@ -25,7 +25,7 @@ pub(super) mod prelude {
     pub use crate::node::binary_expression::BinaryExpression;
     pub use crate::node::call_expression::CallExpression;
     pub use crate::node::enum_instantiate_expression::EnumInstantiateExpression;
-    pub use crate::node::struct_instantiate_expression::StructInstantiateExpression;
+    pub use crate::node::struct_instantiate_expression::{StructInstantiateExpression, StructInitializationPair};
     pub use crate::node::unary_expression::UnaryExpression;
     pub use crate::node::r#type::*;
     pub use crate::node::break_expression::BreakExpression;

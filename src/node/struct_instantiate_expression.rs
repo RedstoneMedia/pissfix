@@ -4,13 +4,13 @@ use crate::token::Token;
 
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct StructInstallationPair {
+pub struct StructInitializationPair {
     pub field_name: Token,
     pub colon: Token,
     pub value: Node,
 }
 
-impl GetSpan for StructInstallationPair {
+impl GetSpan for StructInitializationPair {
     fn get_span(&self) -> Span {
         let start_char = self.field_name.span.start_char;
         let end_char = self.value.get_span().end_char;
@@ -25,7 +25,7 @@ impl GetSpan for StructInstallationPair {
 pub struct StructInstantiateExpression {
     pub name: Token,
     pub opening: Token,
-    pub fields: Vec<StructInstallationPair>,
+    pub pairs: Vec<StructInitializationPair>,
     pub closing: Token,
 }
 

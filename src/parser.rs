@@ -358,8 +358,57 @@ impl Parser {
                 }
                 // Check for struct instantiation
                 if peeked_next.kind == TokenEnum::OpeningBrace {
-                    //self.next_token += 1;
-                    unimplemented!("Struct instantiation");
+                    // Check if we have a struct instantiation expression with pattern: <struct-ident> { <field-ident>: <expr>, ...}
+                    // We assume that if the first pair follows this pattern it must be intended to be one
+                    let mut check_peeked = 1;
+                    let mut next_next_token = self.peek_next(check_peeked);
+                    while TokenEnum::Separator == next_next_token.kind {
+                        check_peeked += 1;
+                        next_next_token = self.peek_next(check_peeked);
+                    }
+                    if let TokenEnum::Identifier(_) = next_next_token.kind {} else {
+                        return Ok(Node::IdentifierExpression(token)); // Not a struct initialization expression
+                    }
+                    if self.peek_next(check_peeked + 1).kind != TokenEnum::DoublePoint {
+                        return Ok(Node::IdentifierExpression(token)); // Not a struct initialization expression
+                    }
+                    self.next_token += 1; // We can now safely move on from the "{"
+
+                    let pairs = self.parse_seperated_expressions_until(&|t| t == TokenEnum::ClosingBrace, |_self| {
+                        let field_name_ident = _self.next();
+                        let TokenEnum::Identifier(_) = field_name_ident.kind else {
+                            return Err(Error::from_span(
+                                field_name_ident.get_span(),
+                                format!("Expected field name identifier, in struct instantiation"),
+                                ErrorKind::ParsingError
+                            ));
+                        };
+                        let colon = _self.next();
+                        if colon.kind != TokenEnum::DoublePoint {
+                            return Err(Error::from_span(
+                                colon.get_span(),
+                                format!("Expected colon after name identifier, in struct instantiation"),
+                                ErrorKind::ParsingError
+                            ));
+                        }
+                        let field_initialize_expr = _self.parse_expression_until_line_end(
+                            &Some(&|t| t == TokenEnum::Comma || t == TokenEnum::ClosingBrace),
+                            error_tracker
+                        )?;
+                        _self.next_token -= 1;
+                        Ok(StructInitializationPair {
+                            field_name: field_name_ident,
+                            colon,
+                            value: field_initialize_expr,
+                        })
+                    }, TokenEnum::Comma)?;
+                    let closing = self.next();
+                    return Ok(Node::StructInstantiateExpression(StructInstantiateExpression {
+                        name: token,
+                        opening: peeked_next,
+                        pairs,
+                        closing,
+                    }));
                 }
                 // Check for enum instantiation
                 if peeked_next.kind == TokenEnum::DoublePoint {
@@ -668,10 +717,10 @@ impl Parser {
 
 
     /// Parses a seperated list of a specific type of expression
-    fn parse_seperated_expressions_until<E, P: Fn(&mut Self) -> Result<E, Error>>(
+    fn parse_seperated_expressions_until<E, P: FnMut(&mut Self) -> Result<E, Error>>(
         &mut self,
         stop_token_check: StopTokenCheck,
-        parse_one: P,
+        mut parse_one: P,
         separator_token_kind: TokenEnum,
     ) -> Result<Vec<E>, Error> {
         if stop_token_check(self.peek_next(0).kind) {

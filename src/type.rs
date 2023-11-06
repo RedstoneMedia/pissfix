@@ -415,6 +415,8 @@ impl Type {
             (Type::Boolean, Type::Boolean) => true,
             (Type::Range, Type::Range) => true,
             (Type::_None, Type::_None) => true,
+            (Type::Struct(name_a), Type::Struct(name_b)) => name_a == name_b,
+            (Type::Enum(name_a), Type::Enum(name_b)) => name_a == name_b,
             (Type::Lambda(expected_fun),  Type::Lambda(actual_fun)) => {
                 // TODO: Implement
                 true
