@@ -17,6 +17,7 @@ mod struct_expression;
 mod enum_expression;
 mod enum_instantiate_expression;
 mod struct_instantiate_expression;
+mod dot_chain_expression;
 
 pub use crate::{GetSpan, Span};
 
@@ -32,6 +33,7 @@ pub(super) mod prelude {
     pub use crate::node::expression_list::ExpressionList;
     pub use crate::node::function_expression::{FunctionExpression, FunctionGenericParameters, FunctionGenericParameter};
     pub use crate::node::base_function_expression::{BaseFunctionExpression, FunctionParameter, FunctionReturnType};
+    pub use crate::node::dot_chain_expression::{DotChainExpression};
     pub use crate::node::struct_expression::{StructField, StructExpression};
     pub use crate::node::enum_expression::{EnumExpression, EnumVariant};
     pub use crate::node::if_expression::IfExpression;
@@ -68,6 +70,8 @@ pub enum Node {
     ReturnExpression(ReturnExpression),
     BreakExpression(BreakExpression),
     IndexExpression(IndexExpression),
+    DotChainExpression(DotChainExpression),
+    DotChainAccess(Token), // Basically the same as an Identifier
     CommentExpression(CommentExpression),
     /// Internally used by compiler
     /// Used to directly insert postfix code (which might not be able to be represented by the pissfix ast)
@@ -97,6 +101,8 @@ impl GetSpan for Node {
             Node::ReturnExpression(e) => e.get_span(),
             Node::BreakExpression(e) => e.get_span(),
             Node::IndexExpression(e) => e.get_span(),
+            Node::DotChainExpression(e) => e.get_span(),
+            Node::DotChainAccess(e) => e.get_span(),
             Node::CommentExpression(e) => e.get_span(),
             Node::_Verbatim(_) => panic!("Internal verbatim does not have a associated span"),
         }

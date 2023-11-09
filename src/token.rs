@@ -44,6 +44,7 @@ pub enum TokenEnum {
     DoublePoint,
     Arrow,
     Underscore,
+    Dot,
 
     OpeningParentheses,
     ClosingParentheses,

@@ -270,6 +270,7 @@ impl Lexer {
             '[' => TokenEnum::OpeningBracket,
             ']' => TokenEnum::ClosingBracket,
             '_' => TokenEnum::Underscore,
+            '.' => TokenEnum::Dot,
             _ => {
                 error_tracker.add_error(Error::from_span(
                     self.current_char_span(),

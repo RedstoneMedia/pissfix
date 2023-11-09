@@ -26,7 +26,8 @@ struct CartCord {
 
 struct PolarCord {
     angle: Flt,
-    distance: Flt
+    distance: Flt,
+    thingy: Arr<Arr<CartCord>>
 }
 
 enum Cord {
@@ -38,6 +39,22 @@ cord = Cord:CartCord(CartCord {
     x: 10.0,
     y: 20.0
 })
+
+
+polar_cord = PolarCord {
+    angle: 11.0,
+    distance: 12.0,
+    thingy: [[CartCord {
+        x: 0.0,
+        y: 0.0
+    }]]
+}
+
+println(polar_cord.angle)
+polar_cord.distance = 13.0
+polar_cord.thingy[0][0].x = 3.0
+
+cord = Cord:PolarCord(polar_cord)
 
 # Should be Ifmmp!Xpsme"
 test_eq(map("Hello World!", (c: Str) -> Str {

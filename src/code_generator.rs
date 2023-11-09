@@ -128,7 +128,7 @@ impl CodeGenerator {
                 };
                 self.add_with_indent(&literal, indent_level);
             }
-            Node::IdentifierExpression(token) => {
+            Node::IdentifierExpression(token) | Node::DotChainAccess(token) => {
                 let TokenEnum::Identifier(ident) = &token.kind else {unreachable!()};
                 self.add_with_indent(ident, indent_level);
             }
@@ -306,6 +306,9 @@ impl CodeGenerator {
                 self.generate_code(index_value, indent_level);
                 self.add_with_indent(" get", indent_level);
             }
+            Node::DotChainExpression(DotChainExpression {expressions}) => {
+                unreachable!()
+            },
             Node::CommentExpression(CommentExpression {comment, on}) => {
                 if let Some(on) = on {
                     self.generate_code(on, indent_level);

@@ -636,6 +636,51 @@ impl Parser {
             }), false));
         }
 
+        // Handle dot chains
+        if operator.kind == TokenEnum::Dot {
+            self.next_token += 1;
+            if let Node::IdentifierExpression(_) = sub_expression {} else {
+                return Err(Error::from_span(
+                    sub_expression.get_span(),
+                    format!("Dot chains can only start with identifiers"),
+                    ErrorKind::ParsingError
+                ))
+            }
+            let mut exprs = vec![sub_expression];
+            loop {
+                let ident_token = self.next();
+                if let TokenEnum::Identifier(_) = ident_token.kind {} else {
+                    return Err(Error::from_span(
+                        ident_token.get_span(),
+                        format!("A dot is always followed by a identifier"),
+                        ErrorKind::ParsingError
+                    ))
+                }
+                let mut last_expr = Node::IdentifierExpression(ident_token);
+                // Handle chain of index expressions
+                let mut last_token = self.peek_next(0);
+                while TokenEnum::OpeningBracket == last_token.kind {
+                    self.next_token += 1; // Consume [
+                    let index_value_expr = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::ClosingBracket), error_tracker)?;
+                    last_expr = Node::IndexExpression(IndexExpression {
+                        opening_bracket: last_token,
+                        index_value: Box::new(index_value_expr),
+                        index_into: Box::new(last_expr),
+                        closing_bracket: self.tokens[self.next_token - 1].clone(),
+                    });
+                    last_token = self.peek_next(0);
+                }
+                exprs.push(last_expr);
+                if TokenEnum::Dot != last_token.kind {
+                    break;
+                }
+                self.next_token += 1; // Consume next dot
+            }
+            return Ok((Node::DotChainExpression(DotChainExpression {
+                expressions: exprs
+            }), false));
+        }
+
         // Handle index expressions
         if operator.kind == TokenEnum::OpeningBracket {
             self.next_token += 1;
@@ -656,9 +701,9 @@ impl Parser {
         };
         if is_assignment {
             self.next_token += 1;
-            if let Node::IdentifierExpression(_) = sub_expression.clone() {
-            } else if let Node::IndexExpression(_) = sub_expression.clone() {
-            } else {
+            if let Node::IdentifierExpression(_) = sub_expression {
+            } else if let Node::IndexExpression(_) = sub_expression {
+            } else if let Node::DotChainExpression(_) = sub_expression {} else {
                 return Err(Error::from_span(operator.span,format!("Unexpected sub expression for assignment: {:?}", sub_expression), ErrorKind::ParsingError));
             }
             // Parse expression to assign to
