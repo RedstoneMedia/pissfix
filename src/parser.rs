@@ -656,7 +656,7 @@ impl Parser {
                         ErrorKind::ParsingError
                     ))
                 }
-                let mut last_expr = Node::IdentifierExpression(ident_token);
+                let mut last_expr = Node::DotChainAccess(ident_token);
                 // Handle chain of index expressions
                 let mut last_token = self.peek_next(0);
                 while TokenEnum::OpeningBracket == last_token.kind {

@@ -269,6 +269,20 @@ impl TypeChecker {
                     Type::Generic(_) | Type::Unknown(_) => {}, // Type would already be changed (or not in case of generics)
                     _ => {self.all_references.replace(inner_id, expr_type);}
                 }
+            },
+            Node::DotChainExpression(_) => {
+                let to_type = self.check_types_recursive(assignment_expr.to.as_ref(), current_scope_id, error_tracker);
+                if !expr_type.expect_to_be(&to_type, &mut self.all_references, false) {
+                    error_tracker.add_error(Error::from_span(
+                        assignment_expr.value.get_span(),
+                        format!(
+                            "Cannot assign {} to value of type {}",
+                            expr_type.to_string(&self.all_references),
+                            to_type.to_string(&self.all_references)
+                        ),
+                        ErrorKind::TypeCheckError
+                    ));
+                }
             }
             v => eprintln!("Warning: Cannot assign to expression: {:?}", v)
         }
@@ -804,7 +818,34 @@ impl TypeChecker {
                 return last_type;
             }
             Node::DotChainAccess(t) => {
-                unimplemented!()
+                let TokenEnum::Identifier(access_name) = &t.kind else {unreachable!()};
+                let mut access_on = self.dot_chain_access_stack.last().expect("Expected type on access stack!");
+                while let Type::Reference(ref_id) = access_on {
+                    access_on = self.all_references.get(ref_id);
+                }
+                return match access_on {
+                    Type::Struct(struct_name) => {
+                        let t_struct = self.structs.get(struct_name).expect("Expected struct to exist");
+                        let Some((_, field_type)) = t_struct.fields.iter()
+                            .find(|(field_name, _)| field_name == access_name) else {
+                            error_tracker.add_error(Error::from_span(
+                                t.get_span(),
+                                format!("Could not find field {} in struct {}", access_name, struct_name),
+                                ErrorKind::TypeCheckError
+                            ));
+                            return self.unknown();
+                        };
+                        field_type.clone()
+                    }
+                    _ => {
+                        error_tracker.add_error(Error::from_span(
+                            t.get_span(),
+                            format!("Can only access on structs, but got: {}", access_on.to_string(&self.all_references)),
+                            ErrorKind::TypeCheckError
+                        ));
+                        self.unknown()
+                    }
+                }
             }
             Node::CommentExpression(CommentExpression { on , .. }) => {
                 if let Some(on) = on {

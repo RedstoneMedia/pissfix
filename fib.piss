@@ -46,11 +46,11 @@ polar_cord = PolarCord {
     distance: 12.0,
     thingy: [[CartCord {
         x: 0.0,
-        y: 0.0
+        y: 12.0
     }]]
 }
 
-println(polar_cord.angle)
+println(polar_cord.thingy[1-1][1*2-2].y)
 polar_cord.distance = 13.0
 polar_cord.thingy[0][0].x = 3.0
 
