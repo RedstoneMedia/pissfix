@@ -18,6 +18,7 @@ mod enum_expression;
 mod enum_instantiate_expression;
 mod struct_instantiate_expression;
 mod dot_chain_expression;
+mod dot_chain_access;
 
 pub use crate::{GetSpan, Span};
 
@@ -34,6 +35,7 @@ pub(super) mod prelude {
     pub use crate::node::function_expression::{FunctionExpression, FunctionGenericParameters, FunctionGenericParameter};
     pub use crate::node::base_function_expression::{BaseFunctionExpression, FunctionParameter, FunctionReturnType};
     pub use crate::node::dot_chain_expression::{DotChainExpression};
+    pub use crate::node::dot_chain_access::{DotChainAccess};
     pub use crate::node::struct_expression::{StructField, StructExpression};
     pub use crate::node::enum_expression::{EnumExpression, EnumVariant};
     pub use crate::node::if_expression::IfExpression;
@@ -71,7 +73,7 @@ pub enum Node {
     BreakExpression(BreakExpression),
     IndexExpression(IndexExpression),
     DotChainExpression(DotChainExpression),
-    DotChainAccess(Token), // Basically the same as an Identifier
+    DotChainAccess(DotChainAccess),
     CommentExpression(CommentExpression),
     /// Internally used by compiler
     /// Used to directly insert postfix code (which might not be able to be represented by the pissfix ast)

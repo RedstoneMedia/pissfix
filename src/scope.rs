@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crate::r#type::{GenericPath, Type};
 
 #[derive(Debug, Clone)]
-pub(crate) struct Function {
+pub struct Function {
     pub parameters: Vec<(String, Type)>,
     pub generic_parameter_map: HashMap<String, GenericPath>, // Maps a name of a generic type to a path towards that generic in the parameters
     pub returns: Type,
@@ -10,7 +10,7 @@ pub(crate) struct Function {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Scope {
+pub struct Scope {
     pub functions: HashMap<String, Function>,
     pub variables: HashMap<String, Type>,
     pub parent_scope : Option<u64>

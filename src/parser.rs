@@ -16,6 +16,7 @@ type StopTokenCheck<'a> = &'a dyn Fn(TokenEnum) -> bool;
 
 pub struct Parser {
     tokens : Vec<Token>,
+    dot_chain_access_count: usize,
     next_token: usize
 }
 
@@ -24,6 +25,7 @@ impl Parser {
     pub fn new(tokens : Vec<Token>) -> Self {
         Self {
             tokens,
+            dot_chain_access_count: 0,
             next_token: 0,
         }
     }
@@ -656,7 +658,11 @@ impl Parser {
                         ErrorKind::ParsingError
                     ))
                 }
-                let mut last_expr = Node::DotChainAccess(ident_token);
+                let mut last_expr = Node::DotChainAccess(DotChainAccess {
+                    ident: ident_token,
+                    access_id: self.dot_chain_access_count,
+                });
+                self.dot_chain_access_count += 1;
                 // Handle chain of index expressions
                 let mut last_token = self.peek_next(0);
                 while TokenEnum::OpeningBracket == last_token.kind {

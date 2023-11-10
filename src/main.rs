@@ -60,7 +60,7 @@ fn main() {
         eprintln!("{}", error_tracker.get_errors_text(&code));
         return;
     }
-    let mut code_generator = CodeGenerator::default();
+    let mut code_generator = CodeGenerator::new(type_checker.dot_chain_access_types);
     code_generator.generate_code(&root, 0);
     let output_code = code_generator.code.trim_start().trim_end();
     let elapsed_time = start.elapsed();

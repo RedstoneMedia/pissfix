@@ -5,26 +5,26 @@ use crate::scope::Function;
 /// Holds all types that were Unknown at one point All references
 /// A reference type in here can *NEVER* be deleted
 #[derive(Debug, Clone, Default)]
-pub(crate) struct AllReferences {
+pub struct AllReferences {
     types: Vec<Type>
 }
 
 impl AllReferences {
 
-    pub(crate) fn insert(&mut self, t: Type) -> usize {
+    pub fn insert(&mut self, t: Type) -> usize {
         self.types.push(t);
         self.types.len() - 1
     }
 
-    pub(crate) fn replace(&mut self, id: usize, new: Type) {
+    pub fn replace(&mut self, id: usize, new: Type) {
         self.types[id] = new;
     }
 
-    pub(crate) fn get_mut(&mut self, id: &usize) -> &mut Type {
+    pub fn get_mut(&mut self, id: &usize) -> &mut Type {
         self.types.get_mut(*id).expect(&format!("Reference does not exist with id : {}", id))
     }
 
-    pub(crate) fn get(&self, id: &usize) -> &Type {
+    pub fn get(&self, id: &usize) -> &Type {
         self.types.get(*id).expect(&format!("Reference does not exist with id : {}", id))
     }
 
@@ -32,13 +32,13 @@ impl AllReferences {
 
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Generic {
+pub struct Generic {
     pub name: String,
     pub base: GenericBase
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum GenericBase {
+pub enum GenericBase {
     Requirements(TypeRequirements),
     Specific(Type)
 }
@@ -51,13 +51,13 @@ impl Default for GenericBase {
 
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct TypeRequirements {
+pub struct TypeRequirements {
     pub requirements: Vec<TypeRequirement>
 }
 
 impl TypeRequirements {
 
-    pub(crate) fn new(requirements: Option<Vec<TypeRequirement>>, all_unknown: &mut AllReferences) -> Type {
+    pub fn new(requirements: Option<Vec<TypeRequirement>>, all_unknown: &mut AllReferences) -> Type {
         let id = all_unknown.insert(Type::Unknown(Box::new(Self {
             requirements: requirements.unwrap_or_else(|| Default::default()),
         })));
@@ -92,7 +92,7 @@ impl TypeRequirements {
         }
     }
 
-    pub(crate) fn to_string(&self, all_references: &AllReferences) -> String {
+    pub fn to_string(&self, all_references: &AllReferences) -> String {
         if self.requirements.is_empty() {
             return "Type".to_string();
         }
@@ -112,7 +112,7 @@ impl TypeRequirements {
 
 impl Generic {
 
-    pub(crate) fn new_requirement_based(name: String, requirements: Option<TypeRequirements>, all_references: &mut AllReferences) -> Type {
+    pub fn new_requirement_based(name: String, requirements: Option<TypeRequirements>, all_references: &mut AllReferences) -> Type {
         let id = all_references.insert(Type::Generic(Box::new(Self {
             name,
             base: GenericBase::Requirements(requirements.unwrap_or_else(|| Default::default())),
@@ -120,14 +120,14 @@ impl Generic {
         Type::Reference(id)
     }
 
-    pub(crate) fn new_specific_based(name: String, specific_type: Type) -> Type {
+    pub fn new_specific_based(name: String, specific_type: Type) -> Type {
         Type::Generic(Box::new(Self {
             name,
             base: GenericBase::Specific(specific_type),
         }))
     }
 
-    pub(crate) fn to_string(&self, all_references: &AllReferences) -> String {
+    pub fn to_string(&self, all_references: &AllReferences) -> String {
         let name = if self.name.is_empty() {
             "".to_string()
         } else {
@@ -167,7 +167,7 @@ impl Generic {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum TypeRequirement {
+pub enum TypeRequirement {
     Iteration(Option<usize>),
     Index(Option<usize>),
     Equality(Type),
@@ -262,7 +262,7 @@ impl TypeRequirement {
         with_a.expect_to_be(with_b, all_references, lax_context)
     }
 
-    pub(crate) fn to_string(&self, all_references: &AllReferences) -> String {
+    pub fn to_string(&self, all_references: &AllReferences) -> String {
         match self {
             TypeRequirement::Index(id) | TypeRequirement::Iteration(id) => {
                 let name = match self {
@@ -290,7 +290,7 @@ impl TypeRequirement {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) enum Type {
+pub enum Type {
     Integer,
     Float,
     String,
@@ -312,7 +312,7 @@ pub(crate) enum Type {
 
 impl Type {
 
-    pub(crate) fn try_into_iter_inner(&self, all_references: &AllReferences) -> Option<Self> {
+    pub fn try_into_iter_inner(&self, all_references: &AllReferences) -> Option<Self> {
         match self {
             Type::String => Some(Type::String), // Or Char maybe at some point
             Type::Reference(id) => {
@@ -388,7 +388,7 @@ impl Type {
         r
     }
 
-    pub(crate) fn expect_to_be(&self, expected: &Type, all_references: &mut AllReferences, lax_context: bool) -> bool {
+    pub fn expect_to_be(&self, expected: &Type, all_references: &mut AllReferences, lax_context: bool) -> bool {
         match (expected, self) {
             (_, Type::Reference(_)) | (Type::Reference(_), _) => {
                 self.ref_expect_to_be(expected, all_references, lax_context)
@@ -452,7 +452,7 @@ impl Type {
     }
 
 
-    pub(crate) fn require(&self, requirement: TypeRequirement, all_generics: &mut AllReferences, lax_context: bool) -> Result<(), ()> {
+    pub fn require(&self, requirement: TypeRequirement, all_generics: &mut AllReferences, lax_context: bool) -> Result<(), ()> {
         if !requirement.does_fulfill(self, all_generics, lax_context) {
             return Err(());
         }
@@ -467,7 +467,7 @@ impl Type {
         Ok(())
     }
 
-    pub(crate) fn to_string(&self, all_references: &AllReferences) -> String {
+    pub fn to_string(&self, all_references: &AllReferences) -> String {
         match self {
             Type::Integer => "Integer".to_string(),
             Type::Float => "Float".to_string(),
@@ -506,7 +506,7 @@ impl Type {
     }
 
     /// Get the names of the Generics, that are used by the type
-    pub(crate) fn get_used_generics(&self, all_references: &AllReferences) -> Vec<GenericPath> {
+    pub fn get_used_generics(&self, all_references: &AllReferences) -> Vec<GenericPath> {
         match self {
             Type::Lambda(lam) => vec![], // TODO: Implement
             Type::Array(inner_ref_id) => all_references.get(inner_ref_id)
@@ -525,7 +525,7 @@ impl Type {
         }
     }
 
-    pub(crate) fn replace_type_generics(&mut self, generic_map: &HashMap<String, GenericPath>, real_types: &Vec<&Type>, all_references: &mut AllReferences) {
+    pub fn replace_type_generics(&mut self, generic_map: &HashMap<String, GenericPath>, real_types: &Vec<&Type>, all_references: &mut AllReferences) {
         let generic_name = match self {
             Type::Reference(return_type_id) => match all_references.get(return_type_id) {
                 Type::Generic(gen) => Some(gen.name.clone()),
@@ -577,7 +577,7 @@ pub enum GenericPathSegment {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct GenericPath {
+pub struct GenericPath {
     pub generic_name: String,
     segments_stack: Vec<GenericPathSegment>
 }
@@ -591,7 +591,7 @@ impl GenericPath {
         }
     }
 
-    pub(crate) fn inside(&mut self, segment: GenericPathSegment) {
+    pub fn inside(&mut self, segment: GenericPathSegment) {
         self.segments_stack.push(segment);
     }
 

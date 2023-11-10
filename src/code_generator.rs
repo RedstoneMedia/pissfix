@@ -1,5 +1,7 @@
 use crate::node::{Node, prelude::*};
+use crate::r#type::Type;
 use crate::token::TokenEnum;
+use crate::type_checker::DotChainAccessTypes;
 
 const INDENT: &'static str = "    ";
 const MAX_LINE_LENGTH: usize = 60;
@@ -15,7 +17,8 @@ const FUNCTION_REPLACEMENTS: [(&'static str, &'static str); 6] = [
 
 #[derive(Default)]
 pub struct CodeGenerator {
-    pub code: String
+    pub code: String,
+    dot_chain_access_types: DotChainAccessTypes
 }
 
 
@@ -128,9 +131,15 @@ impl CodeGenerator {
                 };
                 self.add_with_indent(&literal, indent_level);
             }
-            Node::IdentifierExpression(token) | Node::DotChainAccess(token) => {
+            Node::IdentifierExpression(token) => {
                 let TokenEnum::Identifier(ident) = &token.kind else {unreachable!()};
                 self.add_with_indent(ident, indent_level);
+            }
+            Node::DotChainAccess(DotChainAccess { ident, access_id }) => {
+                let TokenEnum::Identifier(property_name) = &ident.kind else {unreachable!()};
+                let Type::Struct(struct_name) = self.dot_chain_access_types.get(access_id).unwrap() else {unimplemented!("DotChainAccess is only implemented for structs")};
+                let access_function_name = format!("{}-{}", struct_name.to_lowercase(), property_name);
+                self.add_with_indent(&access_function_name, indent_level);
             }
             Node::CallExpression(CallExpression { name, arguments, .. }) => {
                 for argument in arguments {
@@ -307,7 +316,10 @@ impl CodeGenerator {
                 self.add_with_indent(" get", indent_level);
             }
             Node::DotChainExpression(DotChainExpression {expressions}) => {
-                unreachable!()
+                for expression in expressions {
+                    self.generate_code(expression, indent_level);
+                    self.add_with_indent(" ", indent_level);
+                }
             },
             Node::CommentExpression(CommentExpression {comment, on}) => {
                 if let Some(on) = on {
@@ -319,6 +331,13 @@ impl CodeGenerator {
             Node::_Verbatim(code) => {
                 self.add_with_indent(code, indent_level);
             }
+        }
+    }
+
+    pub fn new(dot_chain_access_types: DotChainAccessTypes) -> Self {
+        Self {
+            code: Default::default(),
+            dot_chain_access_types,
         }
     }
 }

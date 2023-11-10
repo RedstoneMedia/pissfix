@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use crate::errors::{Error, ErrorKind, ErrorTracker};
 use crate::{GetSpan, Span};
 use crate::node::Node;
@@ -8,23 +9,26 @@ use crate::scope::{AllScopes, Function, Scope};
 use crate::token::TokenEnum;
 
 #[derive(Debug, Clone)]
-pub(crate) struct Struct {
+pub struct Struct {
     pub fields: Vec<(String, Type)>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Enum {
+pub struct Enum {
     pub variants: Vec<(String, Option<Type>)>,
 }
+
+pub(crate) type DotChainAccessTypes = FxHashMap<usize, Type>;
 
 #[derive(Debug, Default)]
 pub struct TypeChecker {
     all_scopes: AllScopes,
     all_references: AllReferences,
-    structs: HashMap<String, Struct>,
+    pub structs: HashMap<String, Struct>,
     enums: HashMap<String, Enum>,
     function_recursive_calls_check_stack: Vec<(String, Vec<Vec<(Type, Span)>>)>,
-    dot_chain_access_stack: Vec<Type>
+    dot_chain_access_stack: Vec<Type>,
+    pub dot_chain_access_types: DotChainAccessTypes
 }
 
 impl TypeChecker {
@@ -817,8 +821,8 @@ impl TypeChecker {
                 }
                 return last_type;
             }
-            Node::DotChainAccess(t) => {
-                let TokenEnum::Identifier(access_name) = &t.kind else {unreachable!()};
+            Node::DotChainAccess(DotChainAccess {ident, access_id}) => {
+                let TokenEnum::Identifier(access_name) = &ident.kind else {unreachable!()};
                 let mut access_on = self.dot_chain_access_stack.last().expect("Expected type on access stack!");
                 while let Type::Reference(ref_id) = access_on {
                     access_on = self.all_references.get(ref_id);
@@ -829,17 +833,18 @@ impl TypeChecker {
                         let Some((_, field_type)) = t_struct.fields.iter()
                             .find(|(field_name, _)| field_name == access_name) else {
                             error_tracker.add_error(Error::from_span(
-                                t.get_span(),
+                                ident.get_span(),
                                 format!("Could not find field {} in struct {}", access_name, struct_name),
                                 ErrorKind::TypeCheckError
                             ));
                             return self.unknown();
                         };
+                        self.dot_chain_access_types.insert(*access_id, access_on.clone()); // Store data for code generator
                         field_type.clone()
                     }
                     _ => {
                         error_tracker.add_error(Error::from_span(
-                            t.get_span(),
+                            ident.get_span(),
                             format!("Can only access on structs, but got: {}", access_on.to_string(&self.all_references)),
                             ErrorKind::TypeCheckError
                         ));
