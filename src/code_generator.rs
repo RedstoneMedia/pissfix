@@ -399,6 +399,7 @@ impl CodeGenerator {
                     self.generate_code(expression, indent_level);
                     self.add_with_indent(" ", indent_level);
                 }
+                self.code.pop(); // Remove trailing " "
             },
             Node::CommentExpression(CommentExpression {comment, on}) => {
                 if let Some(on) = on {
