@@ -52,6 +52,39 @@ impl CodeGenerator {
         }
     }
 
+    fn fill_index_assignment_value_path<'a>(index_into: &'a Node, value_path_expressions: &mut Vec<&'a Box<Node>>) -> (&'a Node, Option<Node>, &'static str) {
+        // This is required as a normally generating the code for a index expression would modify a copy of the gotten value, which is unwanted and might be invalid
+        let mut current_expression = index_into;
+        while let Node::IndexExpression(IndexExpression { index_value: inner_index_value, index_into: inner_index_into, ..}) = current_expression {
+            value_path_expressions.push(inner_index_value);
+            current_expression = inner_index_into;
+        }
+        // Use set with simple index or path-set with array of indices for nested index expressions
+        // We cannot use path-set for everything, as it only works on arrays while set also works on strings
+        let (index_value_expr, function_name) = if value_path_expressions.len() == 1 {
+            (None, "set")
+        } else {
+            let path_array_expression_list = Node::ExpressionList(ExpressionList {
+                opening: Token { kind: TokenEnum::OpeningBracket, span: Default::default() },
+                expressions: value_path_expressions
+                    .into_iter()
+                    .rev() // Important as the AST starts from the outer most indexing expression, which is the last one
+                    .map(|n| n.as_ref().clone())
+                    .collect(),
+                closing: Token { kind: TokenEnum::ClosingBracket, span: Default::default() },
+            });
+            (Some(path_array_expression_list), "path-set")
+        };
+        (current_expression, index_value_expr, function_name)
+    }
+
+    fn get_dot_chain_access_base_name(&self, expr: &Node) -> String {
+        let Node::DotChainAccess(DotChainAccess { ident, access_id }) = expr else {unreachable!()};
+        let TokenEnum::Identifier(property_name) = &ident.kind else {unreachable!()};
+        let Type::Struct(struct_name) = self.dot_chain_access_types.get(access_id).unwrap() else {unimplemented!("DotChainAccess is only implemented for structs")};
+        format!("{}-{}", struct_name.to_lowercase(), property_name)
+    }
+
     fn generate_base_function_code(&mut self, anonymous_function_expression: &BaseFunctionExpression, generic_parameters: &Option<FunctionGenericParameters>, indent_level: usize) {
         let BaseFunctionExpression {parameters, return_type, body, ..} = anonymous_function_expression;
         self.add_with_indent("(", indent_level);
@@ -74,6 +107,92 @@ impl CodeGenerator {
         };
         self.add_with_indent(") ", indent_level);
         self.generate_code(body, indent_level);
+    }
+
+    fn generate_assignment_code(&mut self, assignment_expression: &AssignmentExpression, indent_level: usize) {
+        let AssignmentExpression {to, value, ..} = assignment_expression;
+        match &**to {
+            Node::IndexExpression(IndexExpression {index_value, index_into, ..}) => {
+                // This is required as a normally generating the code for a index expression would modify a copy of the gotten value, which is unwanted and might be invalid
+                let mut value_path_expressions = vec![index_value];
+                let (most_inner_expression, path_index_value, function_name) = Self::fill_index_assignment_value_path(index_into, &mut value_path_expressions);
+                if let Node::IdentifierExpression(_) = most_inner_expression {} else { panic!("First index into always has to be a identifier expression") }
+                self.generate_code(most_inner_expression, indent_level);
+                self.add_with_indent(" ", indent_level);
+                // Generate code for index value
+                if let Some(path_index_value) = path_index_value {
+                    self.generate_code(&path_index_value, indent_level);
+                } else {
+                    self.generate_code(index_value, indent_level);
+                }
+                // Add assignment value code
+                self.add_with_indent(" ", indent_level);
+                self.generate_code(value, indent_level);
+                // Assign with either "set" or "path-set"
+                self.add_with_indent(&format!(" {} ", function_name), indent_level);
+                self.generate_code(most_inner_expression, indent_level);
+            }
+            Node::DotChainExpression(DotChainExpression {expressions}) => {
+                let mut expressions_iter = expressions.iter();
+                let Node::IdentifierExpression(Token {kind: TokenEnum::Identifier(assign_to_var), ..}) = expressions_iter.next().unwrap() else {unreachable!()};
+                let mut temp_assignment_var = assign_to_var.clone();
+                let mut set_functions = vec![];
+                // Generate code to go down the dot chain pushing the Left assign values to the stack
+                for (i, expr) in expressions_iter.enumerate() {
+                    // Add the last value to get from to the stack for the set to work
+                    self.add_with_indent(&temp_assignment_var, indent_level);
+                    self.add_with_indent("\n", indent_level);
+                    // Handel indexing in dot chain assignment
+                    if let Node::IndexExpression(_) = expr {
+                        let mut value_path_expressions = vec![];
+                        let (most_inner_expr, index_value, index_set_function) = Self::fill_index_assignment_value_path(expr, &mut value_path_expressions);
+                        // Generate the code to put the array of the current expression in the dot chain on the stack
+                        // The most inner expr in the index chain is always the left most expression.
+                        // Since we are in a dot chain this is the property that contains the array we are currently indexing on.
+                        self.add_with_indent(&temp_assignment_var, indent_level);
+                        self.add_with_indent(" ", indent_level);
+                        self.generate_code(most_inner_expr, indent_level);
+                        self.add_with_indent("\n", indent_level);
+                        // Generate code to push index value for index set function
+                        if let Some(index_value) = index_value {
+                            self.generate_code(&index_value, indent_level);
+                        } else {
+                            self.generate_code(value_path_expressions.first().unwrap(), indent_level);
+                        }
+                        self.add_with_indent(" ", indent_level);
+                        // Add set_functions for outer and inner array set
+                        set_functions.push(self.get_dot_chain_access_base_name(most_inner_expr) + "-set");
+                        set_functions.push(index_set_function.to_string());
+                    } else {
+                        set_functions.push(self.get_dot_chain_access_base_name(expr) + "-set");
+                    }
+                    if i == expressions.len() - 2 { break; } // Don't bother generating code for the next expression in the dot chain, if at the end of it
+                    // Generate the code to access the inner value from the current expression, with the last value
+                    self.add_with_indent(&temp_assignment_var, indent_level);
+                    self.add_with_indent(" ", indent_level);
+                    self.generate_code(expr, indent_level);
+                    // Save inner value to var
+                    let new_temp_assignment_var = format!("temp_assign_{}", i);
+                    self.add_with_indent(&format!(" {}!\n", new_temp_assignment_var), indent_level);
+                    temp_assignment_var = new_temp_assignment_var;
+                }
+                // Generate code to push assignment value to stack
+                self.generate_code(value, indent_level);
+                self.add_with_indent(" ", indent_level);
+                // Generate code to go up the dot chain setting the values from the bottom up
+                for set_function in set_functions.iter().rev() {
+                    self.add_with_indent(&set_function, indent_level);
+                    self.add_with_indent("\n", indent_level);
+                }
+                self.add_with_indent(assign_to_var, indent_level);
+            },
+            _ => {
+                self.generate_code(value, indent_level);
+                self.add_with_indent(" ", indent_level);
+                self.generate_code(to, indent_level);
+            }
+        }
+        self.add_with_indent("!", indent_level);
     }
 
     pub fn generate_code(&mut self, node: &Node, indent_level: usize) {
@@ -135,10 +254,8 @@ impl CodeGenerator {
                 let TokenEnum::Identifier(ident) = &token.kind else {unreachable!()};
                 self.add_with_indent(ident, indent_level);
             }
-            Node::DotChainAccess(DotChainAccess { ident, access_id }) => {
-                let TokenEnum::Identifier(property_name) = &ident.kind else {unreachable!()};
-                let Type::Struct(struct_name) = self.dot_chain_access_types.get(access_id).unwrap() else {unimplemented!("DotChainAccess is only implemented for structs")};
-                let access_function_name = format!("{}-{}", struct_name.to_lowercase(), property_name);
+            dot_chain_expr@Node::DotChainAccess(_) => {
+                let access_function_name = self.get_dot_chain_access_base_name(dot_chain_expr);
                 self.add_with_indent(&access_function_name, indent_level);
             }
             Node::CallExpression(CallExpression { name, arguments, .. }) => {
@@ -168,46 +285,8 @@ impl CodeGenerator {
                 self.add_with_indent(&variant_name.to_lowercase(), indent_level);
             }
             Node::ParenthesizedExpression(node) => self.generate_code(node, indent_level),
-            Node::AssignmentExpression(AssignmentExpression {to, value, ..}) => {
-                if let Node::IndexExpression(IndexExpression {index_value, index_into, ..}) = &**to {
-                    // This is required as a normally generating the code for a index expression would modify a copy of the gotten value, which is unwanted and might be invalid
-                    let mut value_path_expressions = vec![index_value];
-                    let mut current_expression = index_into;
-                    while let Node::IndexExpression(IndexExpression { index_value: inner_index_value, index_into: inner_index_into, ..}) = current_expression.as_ref() {
-                        value_path_expressions.push(inner_index_value);
-                        current_expression = inner_index_into;
-                    }
-                    if let Node::IdentifierExpression(_) = current_expression.as_ref() {} else { panic!("First index into always has to be a identifier expression") }
-                    self.generate_code(current_expression, indent_level);
-                    self.add_with_indent(" ", indent_level);
-                    // Use set with simple index or path-set with array of indices for nested index expressions
-                    // We cannot use path-set for everything, as it only works on arrays while set also works on strings
-                    let function_name = if value_path_expressions.len() == 1 {
-                        self.generate_code(index_value, indent_level);
-                        "set"
-                    } else {
-                        let path_array_expression_list = Node::ExpressionList(ExpressionList {
-                            opening: Token { kind: TokenEnum::OpeningBracket, span: Default::default() },
-                            expressions: value_path_expressions
-                                .into_iter()
-                                .rev() // Important as the AST starts from the outer most indexing expression, which is the last one
-                                .map(|n| n.as_ref().clone())
-                                .collect(),
-                            closing: Token { kind: TokenEnum::ClosingBracket, span: Default::default() },
-                        });
-                        self.generate_code(&path_array_expression_list, indent_level);
-                        "path-set"
-                    };
-                    self.add_with_indent(" ", indent_level);
-                    self.generate_code(value, indent_level);
-                    self.add_with_indent(&format!(" {} ", function_name), indent_level);
-                    self.generate_code(current_expression, indent_level);
-                } else {
-                    self.generate_code(value, indent_level);
-                    self.add_with_indent(" ", indent_level);
-                    self.generate_code(to, indent_level);
-                }
-                self.add_with_indent("!", indent_level);
+            Node::AssignmentExpression(assignment_expression) => {
+                self.generate_assignment_code(assignment_expression, indent_level);
             },
             Node::ExpressionList(ExpressionList {expressions, opening, ..}) => {
                 let (start, end) = match opening.kind {

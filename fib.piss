@@ -19,6 +19,8 @@ fun map<T>(over: T, f: Lam) -> T {
     over
 }
 
+# Define test datastructures
+
 struct CartCord {
     x: Flt,
     y: Flt
@@ -26,7 +28,7 @@ struct CartCord {
 
 struct PolarCord {
     angle: Flt,
-    distance: Flt,
+    radius: Flt,
     thingy: Arr<Arr<CartCord>>
 }
 
@@ -35,26 +37,41 @@ enum Cord {
     PolarCord: PolarCord
 }
 
-cord = Cord:CartCord(CartCord {
-    x: 10.0,
-    y: 20.0
-})
-
-
+# Test struct creation
 polar_cord = PolarCord {
     angle: 11.0,
-    distance: 12.0,
+    radius: 12.0,
     thingy: [[CartCord {
         x: 0.0,
         y: 12.0
     }]]
 }
 
-println(polar_cord.thingy[1-1][1*2-2].y)
-polar_cord.distance = 13.0
-polar_cord.thingy[0][0].x = 3.0
+# and accessing
+test_eq(polar_cord.angle, 11.0)
+test_eq(polar_cord.radius, 12.0)
+test_eq(polar_cord.thingy[1-1][1*2-2].x, 0.0)
+test_eq(polar_cord.thingy[1-1][1*2-2].y, 12.0)
 
-cord = Cord:PolarCord(polar_cord)
+# Test polar to Cartesian conversion
+fun to_cart_cord(polar_cord: PolarCord) -> CartCord {
+    CartCord {
+        x: polar_cord.radius * cos(polar_cord.angle),
+        y: polar_cord.radius * sin(polar_cord.angle)
+    }
+}
+
+converted_cord = to_cart_cord(polar_cord)
+test_eq(round(converted_cord.x), 0)
+test_eq(round(converted_cord.y), -12)
+
+# Test struct property assignment (Non trivial in postfix, for nested structures)
+polar_cord.radius = 13.0
+polar_cord.thingy[0][0].x = 3.0
+test_eq(polar_cord.radius, 13.0)
+test_eq(polar_cord.thingy[0][0].x, 3.0)
+
+cord = Cord:PolarCord(polar_cord) # TODO: Make it possible to do something with enums
 
 # Should be Ifmmp!Xpsme"
 test_eq(map("Hello World!", (c: Str) -> Str {
