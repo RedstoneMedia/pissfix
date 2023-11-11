@@ -298,6 +298,7 @@ pub enum Type {
     Range,
     Lambda(Box<Function>),
     Array(usize),
+    Inner(usize), // Special type that represents any type with a specific inner type
     Struct(String),
     Enum(String),
     Any, // Acts like a union of all types
@@ -326,7 +327,7 @@ impl Type {
                     .map(Type::Reference)
             },
             Type::Range => Some(Type::Integer),
-            Type::Array(inner_id) => Some(Type::Reference(*inner_id)),
+            Type::Array(inner_id) | Type::Inner(inner_id) => Some(Type::Reference(*inner_id)),
             _ => None
         }
     }
@@ -421,6 +422,10 @@ impl Type {
             },
             (Type::Array(inner_expected), Type::Array(inner_actual)) => {
                 Type::Reference(*inner_actual).expect_to_be(&Type::Reference(*inner_expected), all_references, lax_context)
+            },
+            (Type::Inner(inner_expected), actual) => {
+                let Some(actual_inner) = actual.try_into_iter_inner(all_references) else {return false};
+                actual_inner.expect_to_be(&Type::Reference(*inner_expected), all_references, lax_context)
             }
             // Unions can only be compared in a lenient context, because the concrete type of the unions at runtime might differ
             (expected, Type::Union(types_actual)) if lax_context => {
@@ -486,6 +491,9 @@ impl Type {
             Type::Array(inner) => format!("Array<{}>", all_references
                 .get(inner)
                 .to_string(all_references)),
+            Type::Inner(inner) => format!("Inner<{}>", all_references
+                .get(inner)
+                .to_string(all_references)),
             Type::Struct(name) | Type::Enum(name) => name.clone(),
             Type::Union(types) => types.iter()
                 .map(|t| t.to_string(all_references))
@@ -509,15 +517,14 @@ impl Type {
     pub fn get_used_generics(&self, all_references: &AllReferences) -> Vec<GenericPath> {
         match self {
             Type::Lambda(lam) => vec![], // TODO: Implement
-            Type::Array(inner_ref_id) => all_references.get(inner_ref_id)
+            Type::Array(inner_ref_id) | Type::Inner(inner_ref_id) => all_references.get(inner_ref_id)
                 .get_used_generics(all_references)
                 .into_iter()
                 .map(|mut path| {
                     path.inside(GenericPathSegment::Inner);
                     path
                 })
-                .collect()
-            ,
+                .collect(),
             Type::Reference(ref_id) => all_references.get(ref_id).get_used_generics(all_references),
             Type::Generic(gen) => vec![GenericPath::new(gen)],
             Type::Union(_) => vec![], // There is no concrete way to know which variant of the union is going to be used. Consider a Type: `Str | T`. T could be used, or not depending on the situation
@@ -535,7 +542,7 @@ impl Type {
                 GenericBase::Requirements(_) => unreachable!("Generic requirement have to be behind reference"),
                 GenericBase::Specific(_) => Some(gen.name.clone())
             },
-            Type::Array(inner_id) => {
+            Type::Array(inner_id) | Type::Inner(inner_id) => {
                 let mut new_inner = all_references.get(inner_id).clone();
                 new_inner.replace_type_generics(generic_map, real_types, all_references);
                 *inner_id = all_references.insert(new_inner); // TODO: Don't always create new array reference (Maybe the replace_return_type_generics didn't do anything)

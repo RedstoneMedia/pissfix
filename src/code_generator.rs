@@ -7,14 +7,14 @@ use crate::type_checker::{DotChainAccessTypes, Struct};
 const INDENT: &'static str = "    ";
 const MAX_LINE_LENGTH: usize = 60;
 
-const FUNCTION_REPLACEMENTS: [(&'static str, &'static str); 6] = [
-    ("test_eq", "test="),
-    ("test_neq", "test!="),
-    ("char_to_str", "char->str"),
-    ("chars_to_str", "chars->str"),
-    ("str_to_chars", "str->chars"),
-    ("_", "-"),
-];
+static FUNCTION_REPLACEMENTS: once_cell::sync::Lazy<HashMap<&'static str, &'static str>> = once_cell::sync::Lazy::new(|| {
+    include_str!("std_lib/replaced_names.txt").lines()
+        .map(|line| {
+            let (original, replaced) = line.split_once(" ").unwrap();
+            (replaced, original)
+        })
+        .collect()
+});
 
 #[derive(Default)]
 pub struct CodeGenerator {
@@ -276,7 +276,7 @@ impl CodeGenerator {
                     let TokenEnum::Identifier(instantiation_field_name) = &pair.field_name.kind else {unreachable!()};
                     let (field_index, _) = t_struct.fields.iter()
                         .enumerate()
-                        .find(|(i, (field_name, _))| field_name == instantiation_field_name)
+                        .find(|(_, (field_name, _))| field_name == instantiation_field_name)
                         .unwrap();
                     (field_index, pair)
                 }).collect();
@@ -438,9 +438,7 @@ impl CodeGenerator {
 
 
 fn replace_function_ident(ident_str: &str) -> String {
-    let mut out = ident_str.replace(FUNCTION_REPLACEMENTS[0].0, FUNCTION_REPLACEMENTS[0].1);
-    for (x, with) in FUNCTION_REPLACEMENTS {
-        out = out.replace(x, with);
-    }
-    out
+    FUNCTION_REPLACEMENTS.get(ident_str)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| ident_str.replace("_", "-"))
 }

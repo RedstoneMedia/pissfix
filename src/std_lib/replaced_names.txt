@@ -7,6 +7,8 @@ empty? is_empty
 exearr? is_exearr
 find-from find_from
 find-from find_from
+and all_and
+or all_or
 flt? is_flt
 image-height image_height
 image-width image_width

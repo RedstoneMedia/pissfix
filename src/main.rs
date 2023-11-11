@@ -3,7 +3,6 @@ use clap::Parser;
 use clap_derive::Parser;
 use pissfix::code_generator::CodeGenerator;
 use pissfix::errors::ErrorTracker;
-use pissfix::type_checker::TypeChecker;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -34,6 +33,8 @@ fn main() {
         return;
     }
 
+    let mut type_checker = pissfix::parse_std_lib();
+
     let code = std::fs::read_to_string(&args.input)
         .expect("Could not read input file!");
 
@@ -54,7 +55,7 @@ fn main() {
     if args.print_ast {
         println!("{:#?}\n\n\n", root);
     }
-    let mut type_checker = TypeChecker::default();
+    //let mut type_checker = TypeChecker::new();
     type_checker.check_types(&root, &mut error_tracker);
     if error_tracker.has_errors() {
         eprintln!("{}", error_tracker.get_errors_text(&code));

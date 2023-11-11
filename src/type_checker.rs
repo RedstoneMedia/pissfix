@@ -19,11 +19,12 @@ pub struct Enum {
 }
 
 pub(crate) type DotChainAccessTypes = FxHashMap<usize, Type>;
+pub(crate) const ROOT_SCOPE_ID : u64 = 0;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TypeChecker {
-    all_scopes: AllScopes,
-    all_references: AllReferences,
+    pub(crate) all_scopes: AllScopes,
+    pub(crate) all_references: AllReferences,
     pub structs: HashMap<String, Struct>,
     enums: HashMap<String, Enum>,
     function_recursive_calls_check_stack: Vec<(String, Vec<Vec<(Type, Span)>>)>,
@@ -78,7 +79,7 @@ impl TypeChecker {
                 returns: self.unknown(), // Unknown until generics are properly implemented
                 scope_id: u64::MAX,
             })),
-            "Arr" => {
+            "Arr" | "Inner" => {
                 let inner_type = single_type_expression.generic_parameters
                     .as_ref()
                     .and_then(|p| p.parameters.get(0));
@@ -92,7 +93,11 @@ impl TypeChecker {
                 };
                 let inner_type = self.check_type_expression(inner, generic_types, error_tracker);
                 let inner_ref_id = self.all_references.insert(inner_type);
-                Type::Array(inner_ref_id)
+                match type_name.as_ref() {
+                    "Arr" => Type::Array(inner_ref_id),
+                    "Inner" => Type::Inner(inner_ref_id),
+                    _ => unreachable!()
+                }
             },
             _ => {
                 error_tracker.add_error(Error::from_span(
@@ -105,7 +110,7 @@ impl TypeChecker {
         }
     }
 
-    fn check_function_expression(&mut self, function_expr: &FunctionExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) {
+    pub(crate) fn check_function_head<'a>(&mut self, function_expr: &'a FunctionExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Option<(&'a String, u64)> {
         let TokenEnum::Identifier(function_name) = &function_expr.name.kind else {unreachable!()};
         // If function is already defined in current scope don't re define it.
         if self.all_scopes.get(&current_scope_id).functions.get(function_name).is_some() {
@@ -114,7 +119,7 @@ impl TypeChecker {
                 format!("Functions can only be defined once, but \"{}\" is redefined here", function_name),
                 ErrorKind::TypeCheckError
             ));
-            return;
+            return None;
         }
 
         let generic_types = function_expr.generic_parameters.as_ref().map(|g| g.parameters.iter()
@@ -134,6 +139,13 @@ impl TypeChecker {
         self.all_scopes.get_mut(&current_scope_id)
             .functions
             .insert(function_name.clone(), function);
+        Some((function_name, function_scope_id))
+    }
+
+    fn check_function_expression(&mut self, function_expr: &FunctionExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) {
+        let Some((function_name, function_scope_id)) = self.check_function_head(function_expr, current_scope_id, error_tracker) else {
+            return;
+        };
 
         // Check function body
         self.function_recursive_calls_check_stack.push((function_name.clone(), vec![]));
@@ -315,14 +327,26 @@ impl TypeChecker {
     fn check_call_expression(&mut self, call_expr: &CallExpression, current_scope_id: u64, error_tracker : &mut ErrorTracker) -> Type {
         let TokenEnum::Identifier(function_name) = &call_expr.name.kind else {unreachable!()};
 
-        return match self.all_scopes.find_function_scope_id_in_scope_by_name(current_scope_id, function_name) {
-            Some(scope_id) => {
-                let function = self.all_scopes
+        self.all_scopes.find_variable_scope_id_in_scope_by_name(current_scope_id, function_name);
+
+
+        let function = self.all_scopes.find_function_scope_id_in_scope_by_name(current_scope_id, function_name).
+            map(|scope_id| {
+                self.all_scopes
                     .get(&scope_id)
                     .functions.get(function_name)
                     .unwrap()
-                    .clone();
+            })
+            .or_else(|| {
+                let t = self.all_scopes.find_variable_in_scope_by_name(current_scope_id, function_name)?;
+                let Type::Lambda(function) = t else {return None};
+                Some(function.as_ref())
+            }
+        );
 
+        return match function {
+            Some(function) => {
+                let function = function.clone();
                 let function_arguments_length = function.parameters.len();
                 let supplied_arguments_length = call_expr.arguments.len();
                 let mut function_return_type = function.returns.clone();
@@ -368,14 +392,11 @@ impl TypeChecker {
                 for expr in &call_expr.arguments {
                     self.check_types_recursive(expr, current_scope_id, error_tracker);
                 }
-
-                /*
-                TODO: Make standard library functions work
                 error_tracker.add_error(Error::from_span(
                     call_expr.name.get_span(),
                     format!("Function is not defined: {}", function_name),
                     ErrorKind::TypeCheckError
-                ));*/
+                ));
                 self.unknown()
             }
         }
@@ -862,9 +883,22 @@ impl TypeChecker {
         Type::_None
     }
 
+    pub fn new() -> Self {
+        let mut new = Self {
+            all_scopes: Default::default(),
+            all_references: Default::default(),
+            structs: Default::default(),
+            enums: Default::default(),
+            function_recursive_calls_check_stack: vec![],
+            dot_chain_access_stack: vec![],
+            dot_chain_access_types: Default::default(),
+        };
+        new.all_scopes.insert(Scope::new(None));
+        new
+    }
+
     pub fn check_types(&mut self, node: &Node, error_tracker : &mut ErrorTracker) {
-        let root_scope_id = self.all_scopes.insert(Scope::new(None));
-        self.check_types_recursive(node, root_scope_id, error_tracker);
+        self.check_types_recursive(node, ROOT_SCOPE_ID, error_tracker);
     }
 
 }

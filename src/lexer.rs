@@ -190,19 +190,10 @@ impl Lexer {
                 let result_peeked_char = self.peek_next(0);
                 if result_peeked_char.is_none() { break };
                 let peeked_char = result_peeked_char.unwrap();
-                if peeked_char.is_alphabetic() || peeked_char == '_' {
+                if peeked_char.is_alphanumeric() || peeked_char == '_' {
                     identifier_string.push(peeked_char);
                     self.next_char_index += 1;
                 } else { break };
-            }
-            let can_be_keyword = self.peek_next(0)
-                .map(|next| next == ' ' || next == '\n' || next == ';')
-                .unwrap_or(true);
-            if !can_be_keyword {
-                return Token {
-                    kind: TokenEnum::Identifier(identifier_string.clone()),
-                    span: self.current_span_with_length(identifier_string.len())
-                };
             }
             // Check for Keywords
             let token_kind = match identifier_string.as_str() {

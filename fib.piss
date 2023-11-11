@@ -11,24 +11,24 @@ test_eq(1+2*((4-5)*(4-5))-6/2, 0)
 # Should be -1
 test_eq(-1*(2+3)/5, -1)
 
-fun map<T>(over: T, f: Lam) -> T {
-    for i in 0..length(over) {
-        v = over[i]
-        over[i] = f(v)
-    }
-    over
-}
+#fun map<T>(over: T, f: Lam(T) -> T) -> T {
+#    for i in 0..length(over) {
+#        v = over[i]
+#        over[i] = f(v)
+#    }
+#    over
+#}
 
 # Should be Ifmmp!Xpsme"
-test_eq(map("Hello World!", (c: Str) -> Str {
-    char_code = str_to_chars(c)[0]
-    char_to_str(char_code + 1)
-}), "Ifmmp!Xpsme\"")
+#test_eq(map("Hello World!", (c: Str) -> Str {
+#    char_code = str_to_chars(c)[0]
+#    char_to_str(char_code + 1)
+#}), "Ifmmp!Xpsme\"")
 
 # Should be [3, 5, 7, 9, 11, 13]
-test_eq(map([1, 1+1, 2+1, 2*2, 5, 6], (n: Int) -> Int {
-    n * 2 + 1
-}), [3, 5, 7, 9, 11, 13])
+#test_eq(map([1, 1+1, 2+1, 2*2, 5, 6], (n: Int) -> Int {
+#    n * 2 + 1
+#}), [3, 5, 7, 9, 11, 13])
 
 # Define test datastructures
 
@@ -84,13 +84,16 @@ test_eq(polar_cord.thingy[0][0].x, 3.0)
 
 cord = Cord:PolarCord(polar_cord) # TODO: Make it possible to do something with enums
 
+test_eq(contains([3, 4, 7], 4), true)
+test_eq(contains("Hello, World", "Hello"), true)
+
 fun avg(s: Str) -> Flt {
     splits = split(s, "\\n")
     sum = 0.0
     for number_string in splits {
         sum += flt(number_string)
     }
-    sum / length(splits)
+    sum / flt(length(splits))
 }
 
 fun union_generic_stuff<T: Int | Str>(v: T) -> T {

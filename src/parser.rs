@@ -130,6 +130,11 @@ impl Parser {
                 ErrorKind::ParsingError
             ));
         }
+        let TokenEnum::Identifier(type_name) = &name_token.kind else {unreachable!()};
+        if type_name == "Lam" {
+            unimplemented!()
+        }
+
         if self.peek_next(0).kind != TokenEnum::LessThan {
             return Ok(TypeExpression::SingleTypeExpression(SingleTypeExpression {
                 type_name: name_token,
