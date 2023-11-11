@@ -5,12 +5,13 @@ Postfix is a stack-based language that uses reverse Polish notation to express a
 Pissfix allows you to write code in a more intuitive and readable way 💁‍♀️👌.
 
 Pissfix is written in Rust 🦀, which is also blazing fast 🚀 and memory safe 🔒💾. \
-The transpilation time on a medium sized program just takes a few microseconds 🚀🚀😱. \
+The transpilation time on a medium-sized program just takes a few microseconds 🚀🚀😱. \
 Pissfix is an amazing language ✨ with tons of upsides, such as:
 
 - Easy to learn and use 🧾🔠
 - Compatible with any platform that supports Postfix 💻🌎✅
-- Supports functions, anonymous functions, variables, loops, and conditional statements 💭
+- Powerful type system, supporting generics 🦾🍎🍐🤖
+- Supports functions, anonymous functions, variables, loops, conditional statements and "dot chains" 🤯💭
 - Has a rich set of built-in operators and functions 💰🅱
 - Allows comments that carry over to postfix 💬➡️📝
 - We do what's right[^1] 😎👉🚀
