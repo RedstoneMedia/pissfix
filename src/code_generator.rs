@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use crate::node::{Node, prelude::*};
 use crate::r#type::Type;
 use crate::token::TokenEnum;
-use crate::type_checker::DotChainAccessTypes;
+use crate::type_checker::{DotChainAccessTypes, Struct};
 
 const INDENT: &'static str = "    ";
 const MAX_LINE_LENGTH: usize = 60;
@@ -18,7 +19,8 @@ const FUNCTION_REPLACEMENTS: [(&'static str, &'static str); 6] = [
 #[derive(Default)]
 pub struct CodeGenerator {
     pub code: String,
-    dot_chain_access_types: DotChainAccessTypes
+    dot_chain_access_types: DotChainAccessTypes,
+    structs: HashMap<String, Struct>
 }
 
 
@@ -268,8 +270,19 @@ impl CodeGenerator {
             }
             Node::StructInstantiateExpression(StructInstantiateExpression { name, pairs, .. }) => {
                 let TokenEnum::Identifier(name_string) = &name.kind else {unreachable!()};
-                for pair in pairs {
-                    // TODO: This is not correct as the order in the instantiation might not be the same as in the definition. To account for this we need the "structs" data from the type checker
+                let t_struct = self.structs.get(name_string).unwrap();
+                // The order in the instantiation might not be the same as in the definition of the struct
+                let mut indexed_pairs : Vec<_> = pairs.iter().map(|pair| {
+                    let TokenEnum::Identifier(instantiation_field_name) = &pair.field_name.kind else {unreachable!()};
+                    let (field_index, _) = t_struct.fields.iter()
+                        .enumerate()
+                        .find(|(i, (field_name, _))| field_name == instantiation_field_name)
+                        .unwrap();
+                    (field_index, pair)
+                }).collect();
+                indexed_pairs.sort_by_key(|(i, _)| *i);
+                // Add pairs in correct order
+                for (_, pair) in indexed_pairs {
                     self.generate_code(&pair.value, indent_level);
                     self.add_with_indent(" ", indent_level);
                 }
@@ -414,10 +427,11 @@ impl CodeGenerator {
         }
     }
 
-    pub fn new(dot_chain_access_types: DotChainAccessTypes) -> Self {
+    pub fn new(dot_chain_access_types: DotChainAccessTypes, structs: HashMap<String, Struct>) -> Self {
         Self {
             code: Default::default(),
             dot_chain_access_types,
+            structs
         }
     }
 }
