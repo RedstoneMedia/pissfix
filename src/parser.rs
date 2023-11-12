@@ -168,7 +168,7 @@ impl Parser {
             ));
         }
 
-        return Ok(TypeExpression::LambdaTypeExpression(LambdaTypeExpression {
+        Ok(TypeExpression::LambdaTypeExpression(LambdaTypeExpression {
             keyword: name_token,
             opening: opening_angle_paren,
             parameters: LambdaParameterList {
@@ -178,7 +178,7 @@ impl Parser {
             },
             return_type,
             closing: closing_angle_paren,
-        }));
+        }))
     }
 
     fn parse_single_type(&mut self) -> Result<TypeExpression, Error> {
@@ -253,7 +253,7 @@ impl Parser {
                     let t = _self.next();
                     if let TokenEnum::Identifier(_) = t.kind {} else {
                         return Err(Error::from_span(
-                            t.span.clone(),
+                            t.span,
                             format!("Expected generic type identifier"),
                             ErrorKind::ParsingError
                         ));
@@ -286,7 +286,7 @@ impl Parser {
         let opening_parenthesis_token = self.next();
         if opening_parenthesis_token.kind != TokenEnum::OpeningParentheses {
             return Err(Error::from_span(
-                self.tokens[self.next_token - 1].span.clone(),
+                self.tokens[self.next_token - 1].span,
                 format!("Expected Opening Parentheses"),
                 ErrorKind::ParsingError
             ));
@@ -1018,7 +1018,7 @@ fn make_wrapped_in_expression_list(node: Node) -> Node {
     } else {
         let span = node.get_span();
         Node::ExpressionList(ExpressionList {
-            opening: Token { kind: TokenEnum::NoToken, span: span.clone() },
+            opening: Token { kind: TokenEnum::NoToken, span },
             expressions: vec![node],
             closing: Token { kind: TokenEnum::NoToken, span },
         })

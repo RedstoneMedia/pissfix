@@ -4,13 +4,13 @@ use crate::r#type::Type;
 use crate::token::TokenEnum;
 use crate::type_checker::{DotChainAccessTypes, Struct};
 
-const INDENT: &'static str = "    ";
+const INDENT: &str = "    ";
 const MAX_LINE_LENGTH: usize = 60;
 
 static FUNCTION_REPLACEMENTS: once_cell::sync::Lazy<HashMap<&'static str, &'static str>> = once_cell::sync::Lazy::new(|| {
     include_str!("std_lib/replaced_names.txt").lines()
         .map(|line| {
-            let (original, replaced) = line.split_once(" ").unwrap();
+            let (original, replaced) = line.split_once(' ').unwrap();
             (replaced, original)
         })
         .collect()
@@ -43,11 +43,11 @@ impl CodeGenerator {
         }
     }
 
-    fn get_type_expression_code<'a>(type_expression: &'a TypeExpression, generic_types: &Vec<&str>) -> &'a str {
+    fn get_type_expression_code<'a>(type_expression: &'a TypeExpression, generic_types: &[&str]) -> &'a str {
         match type_expression {
             TypeExpression::SingleTypeExpression(SingleTypeExpression { type_name: type_name_token, .. }) => {
                 let TokenEnum::Identifier(type_name) = &type_name_token.kind else {unreachable!()};
-                if generic_types.contains(&type_name.as_str()) {"Obj"} else {type_name}
+                if generic_types.contains(&type_name.as_str()) || type_name == "Sequence" {"Obj"} else {type_name}
             },
             TypeExpression::LambdaTypeExpression(_) => "Lam",
             TypeExpression::UnionTypeExpression(_) => "Obj"
@@ -183,7 +183,7 @@ impl CodeGenerator {
                 self.add_with_indent(" ", indent_level);
                 // Generate code to go up the dot chain setting the values from the bottom up
                 for set_function in set_functions.iter().rev() {
-                    self.add_with_indent(&set_function, indent_level);
+                    self.add_with_indent(set_function, indent_level);
                     self.add_with_indent("\n", indent_level);
                 }
                 self.add_with_indent(assign_to_var, indent_level);
@@ -342,7 +342,7 @@ impl CodeGenerator {
                 self.add_with_indent(&format!("{}: (\n", name), indent_level);
                 for field in &struct_expr.fields {
                     let TokenEnum::Identifier(field_name) = &field.field_name.kind else {unreachable!()};
-                    let type_code = Self::get_type_expression_code(&field.field_type, &vec![]);
+                    let type_code = Self::get_type_expression_code(&field.field_type, &[]);
                     self.add_with_indent(&format!("{} :{}\n", field_name, type_code), indent_level + 1);
                 }
                 self.add_with_indent(") datadef\n\n", indent_level);
@@ -358,7 +358,7 @@ impl CodeGenerator {
                     }
                     let type_code = variant.inner.as_ref()
                         .map(|inner| {
-                            let code = Self::get_type_expression_code(inner, &vec![]);
+                            let code = Self::get_type_expression_code(inner, &[]);
                             format!("inner :{}", code)
                         })
                         .unwrap_or("".to_string());
@@ -440,5 +440,5 @@ impl CodeGenerator {
 fn replace_function_ident(ident_str: &str) -> String {
     FUNCTION_REPLACEMENTS.get(ident_str)
         .map(|s| s.to_string())
-        .unwrap_or_else(|| ident_str.replace("_", "-"))
+        .unwrap_or_else(|| ident_str.replace('_', "-"))
 }

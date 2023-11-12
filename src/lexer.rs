@@ -118,7 +118,7 @@ impl Lexer {
                 comment.push(current_char);
             }
             let full_comment_length = comment.len();
-            let comment = comment.replace('\n', "").replace('\r',"");
+            let comment = comment.replace(['\n', '\r'], "");
             let comment_length = comment.len();
             let comment_token = Token {
                 kind: TokenEnum::Comment(comment),

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use bincode::{Decode, Encode};
 use crate::r#type::{GenericPath, Type};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct Function {
     pub parameters: Vec<(String, Type)>,
     pub generic_parameter_map: HashMap<String, GenericPath>, // Maps a name of a generic type to a path towards that generic in the parameters
@@ -9,7 +10,7 @@ pub struct Function {
     pub scope_id: u64,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Encode, Decode)]
 pub struct Scope {
     pub functions: HashMap<String, Function>,
     pub variables: HashMap<String, Type>,

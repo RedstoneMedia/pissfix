@@ -76,11 +76,11 @@ impl TypeChecker {
             return generic_type.clone();
         }
 
-        if let Some(_) = self.structs.get(type_name) {
+        if self.structs.get(type_name).is_some() {
             return Type::Struct(type_name.clone());
         }
 
-        if let Some(_) = self.enums.get(type_name) {
+        if self.enums.get(type_name).is_some() {
             return Type::Enum(type_name.clone());
         }
 
@@ -472,7 +472,7 @@ impl TypeChecker {
                 ));
             }
         }
-        return Type::Struct(struct_name);
+        Type::Struct(struct_name)
     }
 
     fn check_enum_instantiate_expression(&mut self, enum_instantiate_expression: &EnumInstantiateExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Type {
@@ -525,7 +525,7 @@ impl TypeChecker {
                 ));
             }
         }
-        return Type::Enum(enum_name_string);
+        Type::Enum(enum_name_string)
     }
 
     fn check_identifier_expression(&mut self, identifier_expr: &Token, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Type {
@@ -571,21 +571,21 @@ impl TypeChecker {
             _ => unreachable!("Not a binary operator token: {:?}", binary_expr.operation.kind)
         };
 
-        if let Err(_) = left.require(left_requirement.clone(), &mut self.all_references, false) {
+        if left.require(left_requirement.clone(), &mut self.all_references, false).is_err() {
             error_tracker.add_error(Error::from_span(
                 binary_expr.left.get_span(),
                 format!("Type: {} does not support {}", left.to_string(&self.all_references), left_requirement.to_string(&self.all_references)),
                 ErrorKind::TypeCheckError
             ));
         };
-        if let Err(_) = right.require(right_requirement.clone(), &mut self.all_references, false) {
+        if right.require(right_requirement.clone(), &mut self.all_references, false).is_err() {
             error_tracker.add_error(Error::from_span(
                 binary_expr.right.get_span(),
                 format!("Type: {} does not support {}", right.to_string(&self.all_references), right_requirement.to_string(&self.all_references)),
                 ErrorKind::TypeCheckError
             ));
         };
-        if !left.expect_to_be(&right, &mut self.all_references, false) {
+        if !left.expect_to_be(right, &mut self.all_references, false) {
             error_tracker.add_error(Error::from_span(
                 binary_expr.get_span(),
                 format!("Left and right hand side types are not the same: {} and {}", left.to_string(&self.all_references), right.to_string(&self.all_references)),
@@ -670,7 +670,7 @@ impl TypeChecker {
             ));
         }
         let into_type = self.check_types_recursive(&index_expression.index_into, current_scope_id, error_tracker);
-        if let Err(_) = into_type.require(TypeRequirement::Index(None), &mut self.all_references, false) {
+        if into_type.require(TypeRequirement::Index(None), &mut self.all_references, false).is_err() {
             error_tracker.add_error(Error::from_span(
                 index_expression.index_into.get_span(),
                 format!("Type: {} does not support indexing", into_type.to_string(&self.all_references)),
@@ -678,7 +678,7 @@ impl TypeChecker {
             ));
             return self.unknown();
         };
-        into_type.clone().try_into_iter_inner(&mut self.all_references).unwrap()
+        into_type.clone().try_into_iter_inner(&self.all_references).unwrap()
     }
 
     fn check_types_recursive(&mut self, node: &Node, current_scope_id: u64, error_tracker : &mut ErrorTracker) -> Type {
@@ -839,7 +839,7 @@ impl TypeChecker {
                         ErrorKind::TypeCheckError
                     ));
                 }
-                let iteration_type = if let Some(t) = iterate_over_type.clone().try_into_iter_inner(&mut self.all_references) {t} else {
+                let iteration_type = if let Some(t) = iterate_over_type.clone().try_into_iter_inner(&self.all_references) {t} else {
                     // Only happens when the require fails
                     self.unknown()
                 };

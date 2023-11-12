@@ -1,3 +1,5 @@
+use bincode::{Decode, Encode};
+
 mod token;
 pub mod lexer;
 pub mod parser;
@@ -20,10 +22,37 @@ pub trait GetSpan {
 
 }
 
+#[derive(Encode, Decode)]
+struct StdLibCache {
+    std_raw: String,
+    root_scope: scope::Scope,
+    all_references: r#type::AllReferences
+}
+
+
+const STD_LIB_CACHE_PATH: &str = "std_lib.bin";
 
 pub fn load_std_lib() -> type_checker::TypeChecker {
+    let std_raw = include_str!("std_lib/std_headers.piss");
+    // Attempt to load from cache
+    let cache_path = std::path::Path::new(STD_LIB_CACHE_PATH);
+    if cache_path.is_file() {
+        let std_lib_bytes = std::fs::read(cache_path)
+            .expect("Could not read std_lib cache");
+        let (cache, _) : (StdLibCache, _) = bincode::borrow_decode_from_slice(&std_lib_bytes, bincode::config::standard())
+            .expect("Could not decode std_lib cache");
+        if cache.std_raw == std_raw {
+            // Cache is not invalid
+            let mut output_type_checker = type_checker::TypeChecker::new();
+            let root_scope = output_type_checker.all_scopes.get_mut(&type_checker::ROOT_SCOPE_ID);
+            *root_scope = cache.root_scope;
+            output_type_checker.all_references = cache.all_references;
+            return output_type_checker;
+        }
+    }
+    // Process std_lib from scratch
     let mut error_tracker = errors::ErrorTracker::new();
-    let std_headers : String = include_str!("std_lib/std_headers.piss").lines()
+    let std_headers : String = std_raw.lines()
         .map(|line| format!("fun {} {{}}\n", line))
         .collect();
     let mut lexer = lexer::Lexer::new(&std_headers);
@@ -46,10 +75,19 @@ pub fn load_std_lib() -> type_checker::TypeChecker {
         panic!("{}", error_tracker.get_errors_text(&std_headers));
     }
     let root_scope = type_checker.all_scopes.get_mut(&type_checker::ROOT_SCOPE_ID);
-
+    // Write std_lib to cache
+    let cache = StdLibCache {
+        std_raw: std_raw.to_string(),
+        root_scope: root_scope.clone(),
+        all_references: type_checker.all_references.clone(),
+    };
+    let cache_bytes = bincode::encode_to_vec(cache, bincode::config::standard())
+        .expect("Could not encode std_lib cache");
+    std::fs::write(cache_path, cache_bytes).expect("Could not write std_lib cache");
+    // Construct filled type_checker
     let mut output_type_checker = type_checker::TypeChecker::new();
-    let output_all_scopes = output_type_checker.all_scopes.get_mut(&type_checker::ROOT_SCOPE_ID);
-    std::mem::swap(output_all_scopes, root_scope);
+    let output_root_scope = output_type_checker.all_scopes.get_mut(&type_checker::ROOT_SCOPE_ID);
+    std::mem::swap(output_root_scope, root_scope);
     output_type_checker.all_references = type_checker.all_references;
     output_type_checker
 }

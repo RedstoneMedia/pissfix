@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::usize;
+use bincode::{Decode, Encode};
 use crate::scope::Function;
 
 /// Holds all types that were Unknown at one point All references
 /// A reference type in here can *NEVER* be deleted
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Encode, Decode)]
 pub struct AllReferences {
     pub types: Vec<Type>
 }
@@ -31,13 +32,13 @@ impl AllReferences {
 }
 
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Encode, Decode)]
 pub struct Generic {
     pub name: String,
     pub base: GenericBase
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum GenericBase {
     Requirements(TypeRequirements),
     Specific(Type)
@@ -50,7 +51,7 @@ impl Default for GenericBase {
 }
 
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Encode, Decode)]
 pub struct TypeRequirements {
     pub requirements: Vec<TypeRequirement>
 }
@@ -59,7 +60,7 @@ impl TypeRequirements {
 
     pub fn new(requirements: Option<Vec<TypeRequirement>>, all_unknown: &mut AllReferences) -> Type {
         let id = all_unknown.insert(Type::Unknown(Box::new(Self {
-            requirements: requirements.unwrap_or_else(|| Default::default()),
+            requirements: requirements.unwrap_or_default(),
         })));
         Type::Reference(id)
     }
@@ -115,7 +116,7 @@ impl Generic {
     pub fn new_requirement_based(name: String, requirements: Option<TypeRequirements>, all_references: &mut AllReferences) -> Type {
         let id = all_references.insert(Type::Generic(Box::new(Self {
             name,
-            base: GenericBase::Requirements(requirements.unwrap_or_else(|| Default::default())),
+            base: GenericBase::Requirements(requirements.unwrap_or_default()),
         })));
         Type::Reference(id)
     }
@@ -166,7 +167,7 @@ impl Generic {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum TypeRequirement {
     Iteration(Option<usize>),
     Index(Option<usize>),
@@ -289,7 +290,7 @@ impl TypeRequirement {
 
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Encode, Decode)]
 pub enum Type {
     Integer,
     Float,
@@ -392,7 +393,7 @@ impl Type {
             }
             (_, _) => {
                 if swapped {
-                    ref_type.expect_to_be(&other_type, all_references, lax_context)
+                    ref_type.expect_to_be(other_type, all_references, lax_context)
                 } else {
                     other_type.expect_to_be(&ref_type, all_references, lax_context)
                 }
@@ -410,7 +411,7 @@ impl Type {
             (Type::Generic(gen), _) => {
                 match &gen.base {
                     GenericBase::Requirements(_) => unreachable!("Generic requirements are always behind reference"),
-                    GenericBase::Specific(t) => self.expect_to_be(&t, all_references, lax_context)
+                    GenericBase::Specific(t) => self.expect_to_be(t, all_references, lax_context)
                 }
             }
             (_, Type::Generic(gen)) => {
@@ -608,7 +609,7 @@ impl Type {
     fn requirements(&self) -> Option<&TypeRequirements> {
         match self {
             Type::Generic(gen) => match &gen.base {
-                GenericBase::Requirements(requirements) => Some(&requirements),
+                GenericBase::Requirements(requirements) => Some(requirements),
                 GenericBase::Specific(_) => None,
             },
             Type::Unknown(req) => Some(req),
@@ -618,14 +619,14 @@ impl Type {
 
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum GenericPathSegment {
     Parameter(usize),
     LambdaReturn,
     Inner
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct GenericPath {
     pub generic_name: String,
     segments_stack: Vec<GenericPathSegment>
@@ -644,7 +645,7 @@ impl GenericPath {
         self.segments_stack.push(segment);
     }
 
-    fn get_real(&self, real_types: &Vec<&Type>, all_references: &AllReferences) -> Option<Type> {
+    fn get_real(&self, real_types: &[&Type], all_references: &AllReferences) -> Option<Type> {
         let mut last_type : Option<Type> = None;
         for segment in self.segments_stack.iter().rev() {
             let mut new_type = match segment {
