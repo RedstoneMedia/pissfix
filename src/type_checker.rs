@@ -41,6 +41,23 @@ impl TypeChecker {
     fn check_type_expression(&mut self, type_expression: &TypeExpression, generic_types: &Vec<(&str, Type)>, error_tracker: &mut ErrorTracker) -> Type {
         let single_type_expression = match type_expression {
             TypeExpression::SingleTypeExpression(t) => t,
+            TypeExpression::LambdaTypeExpression(LambdaTypeExpression { parameters, return_type, .. }) => {
+                return Type::Lambda(Box::new(Function {
+                    parameters: parameters.types.iter()
+                        .enumerate()
+                        .map(|(i, t)| (
+                            format!("lambda_parameter_{}", i),
+                            self.check_type_expression(t, generic_types, error_tracker))
+                        )
+                        .collect(),
+                    generic_parameter_map: Default::default(),
+                    returns: return_type
+                        .as_ref()
+                        .map(|t| self.check_type_expression(&t.return_type, generic_types, error_tracker))
+                        .unwrap_or(Type::_None),
+                    scope_id: 0,
+                }))
+            }
             TypeExpression::UnionTypeExpression(UnionExpression {types}) => {
                 return Type::Union(types.into_iter()
                     .map(|t| self.check_type_expression(t, generic_types, error_tracker))
@@ -79,7 +96,7 @@ impl TypeChecker {
                 returns: self.unknown(), // Unknown until generics are properly implemented
                 scope_id: u64::MAX,
             })),
-            "Arr" | "Inner" => {
+            "Arr" | "Sequence" => {
                 let inner_type = single_type_expression.generic_parameters
                     .as_ref()
                     .and_then(|p| p.parameters.get(0));
@@ -95,7 +112,7 @@ impl TypeChecker {
                 let inner_ref_id = self.all_references.insert(inner_type);
                 match type_name.as_ref() {
                     "Arr" => Type::Array(inner_ref_id),
-                    "Inner" => Type::Inner(inner_ref_id),
+                    "Sequence" => Type::Sequence(inner_ref_id),
                     _ => unreachable!()
                 }
             },
@@ -313,7 +330,15 @@ impl TypeChecker {
         let real_types : Vec<_> = arguments.iter().map(|(t,_)| t).collect();
         for ((_, expected), (actual, actual_span)) in function.parameters.iter().zip(arguments.iter()) {
             let mut expected_real = expected.clone();
-            expected_real.replace_type_generics(&function.generic_parameter_map, &real_types, &mut self.all_references);
+            let replace_result = expected_real.replace_type_generics(&function.generic_parameter_map, &real_types, &mut self.all_references);
+            if replace_result.is_err() {
+                error_tracker.add_error(Error::from_span(
+                    actual_span.clone(),
+                    format!("Could not replace generic argument type. Expected: {}, but got: {}", expected_real.to_string(&self.all_references), actual.to_string(&self.all_references)),
+                    ErrorKind::TypeCheckError
+                ));
+                continue;
+            }
             if !actual.expect_to_be(&expected_real, &mut self.all_references, true) {
                 error_tracker.add_error(Error::from_span(
                     actual_span.clone(),
@@ -371,13 +396,20 @@ impl TypeChecker {
                     (self.check_types_recursive(expr, current_scope_id, error_tracker), expr.get_span())
                 }).collect();
                 // Try to replace generic types in return type with known types from the arguments
-                function_return_type.replace_type_generics(
+                let replace_result = function_return_type.replace_type_generics(
                     &function.generic_parameter_map,
                     &arguments.iter()
                         .map(|(t, _)| t)
                         .collect(),
                     &mut self.all_references
                 );
+                if replace_result.is_err() {
+                    error_tracker.add_error(Error::from_span(
+                        call_expr.get_span(),
+                        format!("Could not replace generic return type."),
+                        ErrorKind::TypeCheckError
+                    ));
+                }
                 // Check if function call is done to a function that is currently being checked. Aka a recursive call
                 // The argument validly is not describable here, because the called function is not yet fully checked. This is important for generic requirements on the parameters, that might not be known yet.
                 if let Some((_, call_infos)) = self.function_recursive_calls_check_stack.iter_mut().find(|(name, _)| function_name == name) {
@@ -704,14 +736,11 @@ impl TypeChecker {
                     let t = self.check_types_recursive(expr, current_scope_id, error_tracker);
                     if let Type::_None = t {} else {
                         if let Type::_None = return_type {} else {
-                            /*
-                            TODO: Maybe add back in when std lib is in
                             error_tracker.add_error(Error::from_span(
                                 expr.get_span(),
                                 format!("Cannot return multiple values"),
                                 ErrorKind::TypeCheckError
                             ));
-                            */
                         }
                         return_type = t;
                     }

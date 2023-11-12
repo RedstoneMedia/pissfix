@@ -21,7 +21,7 @@ pub trait GetSpan {
 }
 
 
-pub fn parse_std_lib() -> type_checker::TypeChecker {
+pub fn load_std_lib() -> type_checker::TypeChecker {
     let mut error_tracker = errors::ErrorTracker::new();
     let std_headers : String = include_str!("std_lib/std_headers.piss").lines()
         .map(|line| format!("fun {} {{}}\n", line))

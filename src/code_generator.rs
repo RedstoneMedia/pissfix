@@ -23,7 +23,6 @@ pub struct CodeGenerator {
     structs: HashMap<String, Struct>
 }
 
-
 impl CodeGenerator {
     fn add_with_indent(&mut self, mut add: &str, mut indent_level: usize) {
         if add.is_empty() {return;}
@@ -49,7 +48,8 @@ impl CodeGenerator {
             TypeExpression::SingleTypeExpression(SingleTypeExpression { type_name: type_name_token, .. }) => {
                 let TokenEnum::Identifier(type_name) = &type_name_token.kind else {unreachable!()};
                 if generic_types.contains(&type_name.as_str()) {"Obj"} else {type_name}
-            }
+            },
+            TypeExpression::LambdaTypeExpression(_) => "Lam",
             TypeExpression::UnionTypeExpression(_) => "Obj"
         }
     }

@@ -33,7 +33,7 @@ fn main() {
         return;
     }
 
-    let mut type_checker = pissfix::parse_std_lib();
+    let mut type_checker = pissfix::load_std_lib();
 
     let code = std::fs::read_to_string(&args.input)
         .expect("Could not read input file!");

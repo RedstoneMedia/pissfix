@@ -12,14 +12,14 @@ breakif(condition: Bool)
 ceil(x: Int | Flt) -> Int
 char_to_str(char: Int) -> Str
 chars_to_str(chars: Arr<Str>) -> Str
-contains<T>(str: Inner<T>, value: T) -> Bool
+contains<T>(str: Sequence<T>, value: T) -> Bool
 cos(x: Int | Flt) -> Flt
 div(a: Int | Flt, b: Int | Flt) -> Int
-is_empty<T>(obj: Arr<T> | Str) -> Bool
+is_empty<T>(obj: Sequence<T>) -> Bool
 err(message: Str)
 exp(x: Int | Flt) -> Flt
-find<T>(arr: Inner<T>, value: T) -> Int
-find_from<T>(arr: Inner<T>, value: T, startat: Int) -> Int
+find<T>(arr: Sequence<T>, value: T) -> Int
+find_from<T>(arr: Sequence<T>, value: T, startat: Int) -> Int
 floor(x: Int | Flt) -> Int
 flt(obj: Int | Flt | Str) -> Flt
 is_flt(obj: Any) -> Bool
@@ -30,7 +30,7 @@ image_width<T>(image: Arr<T>) -> Flt
 insert<T>(arr: Arr<T>, index: Int, value: T) -> Arr<T>
 int(obj: Flt | Int) -> Int
 is_int(obj: Any) -> Bool
-length<T>(str: Str | Arr<T>) -> Int
+length<T>(str: Sequence<T>) -> Int
 ln(x: Int | Flt) -> Flt
 load_value(key: Str) -> Str
 log(x: Int | Flt, b: Int | Flt) -> Flt

@@ -121,6 +121,66 @@ impl Parser {
         })
     }
 
+    fn parse_lambda_type(&mut self, name_token: Token) -> Result<TypeExpression, Error> {
+        // Ensure <(
+        let opening_angle_paren = self.next();
+        if opening_angle_paren.kind != TokenEnum::LessThan {
+            return Err(Error::from_span(
+                opening_angle_paren.span,
+                format!("Expected opening angle bracket for lambda type"),
+                ErrorKind::ParsingError
+            ));
+        }
+        let opening_parameters_paren = self.next();
+        if opening_parameters_paren.kind != TokenEnum::OpeningParentheses {
+            return Err(Error::from_span(
+                opening_parameters_paren.span,
+                format!("Expected lambda parameter list"),
+                ErrorKind::ParsingError
+            ));
+        }
+        // Parse types inside ()
+        let parameter_types = self.parse_seperated_expressions_until(
+            &|t| t == TokenEnum::ClosingParentheses,
+            |_self| _self.parse_type(),
+            TokenEnum::Comma
+        )?;
+        let closing_parameters_paren = self.next();
+        // Try to parse return type
+        let arrow = self.peek_next(0);
+        let return_type = if arrow.kind == TokenEnum::Arrow {
+            self.next_token += 1;
+            let return_type = self.parse_type()?;
+            Some(Box::new(FunctionReturnType {
+                arrow,
+                return_type
+            }))
+        } else {
+            None
+        };
+        // Ensure >
+        let closing_angle_paren = self.next();
+        if closing_angle_paren.kind != TokenEnum::GreaterThan {
+            return Err(Error::from_span(
+                closing_angle_paren.span,
+                format!("Expected closing angle bracket for lambda type"),
+                ErrorKind::ParsingError
+            ));
+        }
+
+        return Ok(TypeExpression::LambdaTypeExpression(LambdaTypeExpression {
+            keyword: name_token,
+            opening: opening_angle_paren,
+            parameters: LambdaParameterList {
+                opening: opening_parameters_paren,
+                types: parameter_types,
+                closing: closing_parameters_paren,
+            },
+            return_type,
+            closing: closing_angle_paren,
+        }));
+    }
+
     fn parse_single_type(&mut self) -> Result<TypeExpression, Error> {
         let name_token = self.next();
         if let TokenEnum::Identifier(_) = name_token.kind {} else {
@@ -132,7 +192,7 @@ impl Parser {
         }
         let TokenEnum::Identifier(type_name) = &name_token.kind else {unreachable!()};
         if type_name == "Lam" {
-            unimplemented!()
+            return self.parse_lambda_type(name_token);
         }
 
         if self.peek_next(0).kind != TokenEnum::LessThan {
