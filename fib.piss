@@ -84,6 +84,35 @@ test_eq(polar_cord.thingy[0][0].x, 3.0)
 
 cord = Cord:PolarCord(polar_cord) # TODO: Make it possible to do something with enums
 
+fun rect_area(top_left: Cord, bottom_right: Cord) -> Flt {
+    top_left_cart = inspect top_left {
+        Cord:PolarCord as inner {
+            to_cart_cord(inner)
+        }
+        Cord:CartCord as inner {
+            inner
+        }
+    }
+    bottom_right_cart = inspect bottom_right {
+        Cord:PolarCord as inner {
+            to_cart_cord(inner)
+        }
+        Cord:CartCord as inner {
+            inner
+        }
+    }
+
+    width = top_left_cart.x - top_left.x
+    height = bottom_right_cart.y - top_left_cart.y
+    width * height
+}
+
+
+test_eq(rect_area(cord, Cord:CartCord(CartCord {
+    x: 10.0,
+    y: 100.0
+})), 100.0)
+
 test_eq(contains([3, 4, 7], 4), true)
 test_eq(contains("Hello, World", "Hello"), true)
 

@@ -326,6 +326,9 @@ impl CodeGenerator {
                 };
                 self.add_with_indent(" if", indent_level);
             }
+            Node::InspectExpression(InspectExpression {on, arms , ..}) => {
+                unimplemented!()
+            }
             Node::FunctionExpression(FunctionExpression { name, base, generic_parameters, ..}) => {
                 let TokenEnum::Identifier(name_ident) = &name.kind else {unreachable!()};
                 let name_ident = replace_function_ident(name_ident);

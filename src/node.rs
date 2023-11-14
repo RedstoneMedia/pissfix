@@ -19,6 +19,7 @@ mod enum_instantiate_expression;
 mod struct_instantiate_expression;
 mod dot_chain_expression;
 mod dot_chain_access;
+mod inspect_expression;
 
 pub use crate::{GetSpan, Span};
 
@@ -43,6 +44,7 @@ pub(super) mod prelude {
     pub use crate::node::return_expression::ReturnExpression;
     pub use crate::node::while_expression::WhileExpression;
     pub use crate::node::for_expression::ForExpression;
+    pub use crate::node::inspect_expression::{InspectExpression, InspectTypeSelector, InspectArm};
     pub use crate::node::comment::CommentExpression;
     pub use crate::token::Token;
 }
@@ -69,6 +71,7 @@ pub enum Node {
     EnumExpression(EnumExpression),
     WhileExpression(WhileExpression),
     ForExpression(ForExpression),
+    InspectExpression(InspectExpression),
     ReturnExpression(ReturnExpression),
     BreakExpression(BreakExpression),
     IndexExpression(IndexExpression),
@@ -100,6 +103,7 @@ impl GetSpan for Node {
             Node::EnumExpression(e) => e.get_span(),
             Node::WhileExpression(e) => e.get_span(),
             Node::ForExpression(e) => e.get_span(),
+            Node::InspectExpression(e) => e.get_span(),
             Node::ReturnExpression(e) => e.get_span(),
             Node::BreakExpression(e) => e.get_span(),
             Node::IndexExpression(e) => e.get_span(),

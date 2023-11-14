@@ -111,7 +111,7 @@ impl Parser {
         }
 
         // Parse function body
-        let body = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+        let body = self.parse_basic_sub_expression(last_precedence, stop_token_check, error_tracker)?;
         Ok(BaseFunctionExpression {
             opening_parenthesis: opening_parenthesis_token,
             parameters,
@@ -408,7 +408,7 @@ impl Parser {
         }))
     }
 
-    fn parse_sub_expression(&mut self, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<Node, Error> {
+    fn parse_basic_sub_expression(&mut self, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<Node, Error> {
         let mut token = self.next();
         // Skip separator
         while token.kind == TokenEnum::Separator {
@@ -422,93 +422,6 @@ impl Parser {
                 if peeked_next.kind == TokenEnum::OpeningParentheses {
                     self.next_token += 1;
                     return self.parse_function_call(token, last_precedence, error_tracker);
-                }
-                // Check for struct instantiation
-                if peeked_next.kind == TokenEnum::OpeningBrace {
-                    // Check if we have a struct instantiation expression with pattern: <struct-ident> { <field-ident>: <expr>, ...}
-                    // We assume that if the first pair follows this pattern it must be intended to be one
-                    let mut check_peeked = 1;
-                    let mut next_next_token = self.peek_next(check_peeked);
-                    while TokenEnum::Separator == next_next_token.kind {
-                        check_peeked += 1;
-                        next_next_token = self.peek_next(check_peeked);
-                    }
-                    if let TokenEnum::Identifier(_) = next_next_token.kind {} else {
-                        return Ok(Node::IdentifierExpression(token)); // Not a struct initialization expression
-                    }
-                    if self.peek_next(check_peeked + 1).kind != TokenEnum::DoublePoint {
-                        return Ok(Node::IdentifierExpression(token)); // Not a struct initialization expression
-                    }
-                    self.next_token += 1; // We can now safely move on from the "{"
-
-                    let pairs = self.parse_seperated_expressions_until(&|t| t == TokenEnum::ClosingBrace, |_self| {
-                        let field_name_ident = _self.next();
-                        let TokenEnum::Identifier(_) = field_name_ident.kind else {
-                            return Err(Error::from_span(
-                                field_name_ident.get_span(),
-                                format!("Expected field name identifier, in struct instantiation"),
-                                ErrorKind::ParsingError
-                            ));
-                        };
-                        let colon = _self.next();
-                        if colon.kind != TokenEnum::DoublePoint {
-                            return Err(Error::from_span(
-                                colon.get_span(),
-                                format!("Expected colon after name identifier, in struct instantiation"),
-                                ErrorKind::ParsingError
-                            ));
-                        }
-                        let field_initialize_expr = _self.parse_expression_until_line_end(
-                            &Some(&|t| t == TokenEnum::Comma || t == TokenEnum::ClosingBrace),
-                            error_tracker
-                        )?;
-                        _self.next_token -= 1;
-                        Ok(StructInitializationPair {
-                            field_name: field_name_ident,
-                            colon,
-                            value: field_initialize_expr,
-                        })
-                    }, TokenEnum::Comma)?;
-                    let closing = self.next();
-                    return Ok(Node::StructInstantiateExpression(StructInstantiateExpression {
-                        name: token,
-                        opening: peeked_next,
-                        pairs,
-                        closing,
-                    }));
-                }
-                // Check for enum instantiation
-                if peeked_next.kind == TokenEnum::DoublePoint {
-                    self.next_token += 1;
-                    let variant_name_ident = self.next();
-                    let TokenEnum::Identifier(_) = variant_name_ident.kind else {
-                        return Err(Error::from_span(
-                            variant_name_ident.get_span(),
-                            format!("Expected variant name for enum instantiation"),
-                            ErrorKind::ParsingError
-                        ));
-                    };
-
-                    let inner_opening = self.peek_next(0);
-
-                    let mut expr = EnumInstantiateExpression {
-                        enum_name: token,
-                        colon: peeked_next,
-                        variant_name: variant_name_ident,
-                        inner_opening: None,
-                        inner: None,
-                        inner_closing: None,
-                    };
-
-                    if TokenEnum::OpeningParentheses == inner_opening.kind {
-                        self.next_token += 1;
-                        let inner_value = self.parse_expression_until(0, &|t| t == TokenEnum::ClosingParentheses, error_tracker)?;
-                        let inner_closing = self.tokens[self.next_token - 1].clone();
-                        expr.inner_opening = Some(inner_opening);
-                        expr.inner = Some(Box::new(inner_value));
-                        expr.inner_closing = Some(inner_closing);
-                    }
-                    return Ok(Node::EnumInstantiateExpression(expr));
                 }
                 Ok(Node::IdentifierExpression(token))
             },
@@ -556,13 +469,126 @@ impl Parser {
                 );
                 Ok(expression_list)
             }
+            _ if token.kind.is_unary_operator_token() => {
+                let expression = self.parse_basic_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+                Ok(Node::UnaryExpression(UnaryExpression { operation: token, expression: Box::new(expression) }))
+            }
+            _ if token.kind.is_literal() => {
+                Ok(Node::LiteralExpression(token))
+            }
+            _ => {
+                Err(Error::from_span(token.span,format!("Unexpected sub expression token: {:?}", token), ErrorKind::ParsingError))
+            }
+        }
+    }
+
+    fn parse_sub_expression(&mut self, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<Node, Error> {
+        let mut token = self.next();
+        // Skip separator
+        while token.kind == TokenEnum::Separator {
+            token = self.next();
+        }
+        match token.kind {
+            TokenEnum::Identifier(_) => {
+                let peeked_next = self.peek_next(0);
+                // Check for struct instantiation
+                if peeked_next.kind == TokenEnum::OpeningBrace {
+                    // Check if we have a struct instantiation expression with pattern: <struct-ident> { <field-ident>: <expr>, ...}
+                    // We assume that if the first pair follows this pattern it must be intended to be one
+                    let mut check_peeked = 1;
+                    let mut next_next_token = self.peek_next(check_peeked);
+                    while TokenEnum::Separator == next_next_token.kind {
+                        check_peeked += 1;
+                        next_next_token = self.peek_next(check_peeked);
+                    }
+                    if let TokenEnum::Identifier(_) = next_next_token.kind {} else {
+                        return Ok(Node::IdentifierExpression(token)); // Not a struct initialization expression
+                    }
+                    if self.peek_next(check_peeked + 1).kind != TokenEnum::DoublePoint {
+                        return Ok(Node::IdentifierExpression(token)); // Not a struct initialization expression
+                    }
+                    self.next_token += 1; // We can now safely move on from the "{"
+
+                    let pairs = self.parse_seperated_expressions_until(&|t| t == TokenEnum::ClosingBrace, |_self| {
+                        let field_name_ident = _self.next();
+                        let TokenEnum::Identifier(_) = field_name_ident.kind else {
+                            return Err(Error::from_span(
+                                field_name_ident.get_span(),
+                                format!("Expected field name identifier, in struct instantiation"),
+                                ErrorKind::ParsingError
+                            ));
+                        };
+                        let colon = _self.next();
+                        if colon.kind != TokenEnum::DoublePoint {
+                            return Err(Error::from_span(
+                                colon.get_span(),
+                                format!("Expected colon after name identifier, in struct instantiation"),
+                                ErrorKind::ParsingError
+                            ));
+                        }
+                        let field_initialize_expr = _self.parse_expression_until_line_end(
+                            &Some(&|t| t == TokenEnum::Comma || t == TokenEnum::ClosingBrace),
+                            error_tracker,
+                            true
+                        )?;
+                        _self.next_token -= 1;
+                        Ok(StructInitializationPair {
+                            field_name: field_name_ident,
+                            colon,
+                            value: field_initialize_expr,
+                        })
+                    }, TokenEnum::Comma)?;
+                    let closing = self.next();
+                    return Ok(Node::StructInstantiateExpression(StructInstantiateExpression {
+                        name: token,
+                        opening: peeked_next,
+                        pairs,
+                        closing,
+                    }));
+                } else if peeked_next.kind == TokenEnum::DoublePoint {
+                    // Check for enum instantiation
+                    self.next_token += 1;
+                    let variant_name_ident = self.next();
+                    let TokenEnum::Identifier(_) = variant_name_ident.kind else {
+                        return Err(Error::from_span(
+                            variant_name_ident.get_span(),
+                            format!("Expected variant name for enum instantiation"),
+                            ErrorKind::ParsingError
+                        ));
+                    };
+
+                    let inner_opening = self.peek_next(0);
+
+                    let mut expr = EnumInstantiateExpression {
+                        enum_name: token,
+                        colon: peeked_next,
+                        variant_name: variant_name_ident,
+                        inner_opening: None,
+                        inner: None,
+                        inner_closing: None,
+                    };
+
+                    if TokenEnum::OpeningParentheses == inner_opening.kind {
+                        self.next_token += 1;
+                        let inner_value = self.parse_expression_until(0, &|t| t == TokenEnum::ClosingParentheses, error_tracker)?;
+                        let inner_closing = self.tokens[self.next_token - 1].clone();
+                        expr.inner_opening = Some(inner_opening);
+                        expr.inner = Some(Box::new(inner_value));
+                        expr.inner_closing = Some(inner_closing);
+                    }
+                    return Ok(Node::EnumInstantiateExpression(expr));
+                } else {
+                    self.next_token -= 1; // Undo .next() call at the start
+                    self.parse_basic_sub_expression(last_precedence, stop_token_check, error_tracker)
+                }
+            },
             TokenEnum::IfKeyword => {
                 // Parse condition
-                let condition_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
+                let condition_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker, true)?;
                 // Make "{" the token that will be acquired when calling next in parse_sub_expression
                 self.seperator_back_until(|t| t.kind == TokenEnum::OpeningBrace);
                 // Parse true branch
-                let mut true_branch_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+                let mut true_branch_expression = self.parse_basic_sub_expression(last_precedence, stop_token_check, error_tracker)?;
                 true_branch_expression = make_wrapped_in_expression_list(true_branch_expression);
                 // Check for else keyword
                 let mut false_branch = None;
@@ -586,7 +612,7 @@ impl Parser {
             }
             TokenEnum::WhileKeyword => {
                 // Parse condition
-                let condition_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
+                let condition_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker, true)?;
                 let is_ok_condition = match &condition_expression {
                     Node::FunctionExpression(_) => false,
                     Node::ReturnExpression(_) => false,
@@ -604,7 +630,7 @@ impl Parser {
                 // Make "{" the token that will be acquired when calling next in parse_sub_expression
                 self.seperator_back_until(|t| t.kind == TokenEnum::OpeningBrace);
                 // Parse while body
-                let body_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+                let body_expression = self.parse_basic_sub_expression(last_precedence, stop_token_check, error_tracker)?;
                 Ok(Node::WhileExpression(WhileExpression { keyword: token, condition: Box::new(condition_expression), body: Box::new(body_expression) }))
             }
             TokenEnum::ForKeyword => {
@@ -628,11 +654,11 @@ impl Parser {
                     ))
                 }
                 // Parse range
-                let iterate_over_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker)?;
+                let iterate_over_expression = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker, true)?;
                 // Make "{" the token that will be acquired when calling next in parse_sub_expression
                 self.seperator_back_until(|t| t.kind == TokenEnum::OpeningBrace);
                 // Parse while body
-                let body_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+                let body_expression = self.parse_basic_sub_expression(last_precedence, stop_token_check, error_tracker)?;
                 Ok(Node::ForExpression(ForExpression {
                     keyword: token,
                     iteration_var: iteration_variable,
@@ -641,9 +667,98 @@ impl Parser {
                     body: Box::new(body_expression),
                 }))
             }
+            TokenEnum::InspectKeyword => {
+                let inspect_on = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::OpeningBrace), error_tracker, true)?;
+                let opening_body = self.tokens[self.next_token - 1].clone();
+                if TokenEnum::OpeningBrace != opening_body.kind {
+                    return Err(Error::from_span(
+                        opening_body.span,
+                        format!("Expected inspect body opening brace, but got: {:?}", opening_body),
+                        ErrorKind::ParsingError
+                    ))
+                }
+
+                let mut arms = vec![];
+                loop {
+                    let start_token = self.next();
+                    if TokenEnum::Separator == start_token.kind {continue;}
+                    // Parse inspect arm
+                    if let TokenEnum::Identifier(_) = start_token.kind {} else {
+                        return Err(Error::from_span(
+                            start_token.span,
+                            format!("Expected type name identifier at the start of a type selector, but got: {:?}", start_token),
+                            ErrorKind::ParsingError
+                        ))
+                    }
+                    let type_name_ident = start_token;
+                    let double_point = self.peek_next(0);
+                    let type_selector = if double_point.kind == TokenEnum::DoublePoint {
+                        self.next_token += 1;
+                        let enum_variant_ident = self.next();
+                        if let TokenEnum::Identifier(_) = enum_variant_ident.kind {} else {
+                            return Err(Error::from_span(
+                                enum_variant_ident.span,
+                                format!("Expected enum variant identifier in type selector after \":\", but got: {:?}", enum_variant_ident),
+                                ErrorKind::ParsingError
+                            ))
+                        }
+                        InspectTypeSelector::EnumVariant {
+                            enum_name: type_name_ident,
+                            variant_name: enum_variant_ident
+                        }
+                    } else {
+                        InspectTypeSelector::Type {
+                            type_name: type_name_ident,
+                        }
+                    };
+
+                    let possibly_as_keyword = self.peek_next(0);
+                    let (as_keyword, bind_var_ident) = if possibly_as_keyword.kind == TokenEnum::AsKeyword {
+                        self.next_token += 1;
+                        let bind_variable_ident = self.next();
+                        if let TokenEnum::Identifier(_) = bind_variable_ident.kind {} else {
+                            return Err(Error::from_span(
+                                bind_variable_ident.span,
+                                format!("Expected bind variable name identifier after \"as\" in inspect arm, but got: {:?}", bind_variable_ident),
+                                ErrorKind::ParsingError
+                            ))
+                        }
+                        (Some(possibly_as_keyword), Some(bind_variable_ident))
+                    } else {
+                        (None, None)
+                    };
+
+                    let arm_body = self.parse_basic_sub_expression(last_precedence, &None, error_tracker)?;
+                    arms.push(InspectArm {
+                        type_selector,
+                        as_keyword,
+                        bind_var_ident,
+                        body: arm_body,
+                    });
+
+                    // Ignore separators when looking for ending_token
+                    let mut ending_token = self.peek_next(0);
+                    while ending_token.kind == TokenEnum::Separator {
+                        ending_token = self.next();
+                    }
+                    // Check if at end of list
+                    if ending_token.kind == TokenEnum::ClosingBrace {
+                        break;
+                    }
+                    self.next_token -= 1;
+                }
+                let closing_body = self.tokens[self.next_token - 1].clone();
+                Ok(Node::InspectExpression(InspectExpression {
+                    keyword: token,
+                    opening: opening_body,
+                    on: Box::new(inspect_on),
+                    arms,
+                    closing: closing_body
+                }))
+            }
             TokenEnum::ReturnKeyword => {
                 // TODO: Make providing a return value optional
-                let return_value_expression = self.parse_expression_until_line_end(stop_token_check, error_tracker)?;
+                let return_value_expression = self.parse_expression_until_line_end(stop_token_check, error_tracker, false)?;
                 self.next_token -= 1;  // Important to make self.peek_next(0) return a stop token so there is no unexpected operator token error
                 Ok(Node::ReturnExpression(ReturnExpression { keyword: token, expression: Box::new(return_value_expression) } ))
             }
@@ -656,15 +771,9 @@ impl Parser {
                     on: None
                 }))
             }
-            _ if token.kind.is_unary_operator_token() => {
-                let expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
-                Ok(Node::UnaryExpression(UnaryExpression { operation: token, expression: Box::new(expression) }))
-            }
-            _ if token.kind.is_literal() => {
-                Ok(Node::LiteralExpression(token))
-            }
             _ => {
-                Err(Error::from_span(token.span,format!("Unexpected sub expression token: {:?}", token), ErrorKind::ParsingError))
+                self.next_token -= 1; // Undo .next() call at the start
+                self.parse_basic_sub_expression(last_precedence, stop_token_check, error_tracker)
             }
         }
     }
@@ -732,7 +841,7 @@ impl Parser {
                 let mut last_token = self.peek_next(0);
                 while TokenEnum::OpeningBracket == last_token.kind {
                     self.next_token += 1; // Consume [
-                    let index_value_expr = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::ClosingBracket), error_tracker)?;
+                    let index_value_expr = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::ClosingBracket), error_tracker, true)?;
                     last_expr = Node::IndexExpression(IndexExpression {
                         opening_bracket: last_token,
                         index_value: Box::new(index_value_expr),
@@ -755,7 +864,7 @@ impl Parser {
         // Handle index expressions
         if operator.kind == TokenEnum::OpeningBracket {
             self.next_token += 1;
-            let index_value_expr = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::ClosingBracket), error_tracker)?;
+            let index_value_expr = self.parse_expression_until_line_end(&Some(&|t| t == TokenEnum::ClosingBracket), error_tracker, true)?;
             return Ok((Node::IndexExpression(IndexExpression {
                 opening_bracket: operator,
                 index_value: Box::new(index_value_expr),
@@ -778,7 +887,7 @@ impl Parser {
                 return Err(Error::from_span(operator.span,format!("Unexpected sub expression for assignment: {:?}", sub_expression), ErrorKind::ParsingError));
             }
             // Parse expression to assign to
-            let mut assign_expression = self.parse_expression_until_line_end(stop_token_check, error_tracker)?; // Parse whole line since assignment is always the last step
+            let mut assign_expression = self.parse_expression_until_line_end(stop_token_check, error_tracker, false)?; // Parse whole line since assignment is always the last step
             // Apply operator if needed
             let mut is_operator_equals = false;
             if let TokenEnum::OperatorEquals(assignment_operator) = operator.kind.clone() {
@@ -810,7 +919,7 @@ impl Parser {
             if current_precedence < last_precedence || parenthesized && !ignore_precedences { return Ok((sub_expression, true)) }
             self.next_token += 1; // Only accept peeked char if precedence is right.
 
-            let (right, right_did_early_exit) = self.parse_expression(current_precedence, stop_token_check, error_tracker)?;
+            let (right, right_did_early_exit) = self.parse_expression(current_precedence, stop_token_check, error_tracker, true)?;
 
             Ok((Node::BinaryExpression(BinaryExpression {
                 left: Box::new(sub_expression),
@@ -826,8 +935,12 @@ impl Parser {
         }
     }
 
-    fn parse_expression(&mut self, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<(Node, bool), Error> {
-        let sub_expression = self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)?;
+    fn parse_expression(&mut self, last_precedence : u8, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker, basic_sub_expression: bool) -> Result<(Node, bool), Error> {
+        let sub_expression = if basic_sub_expression {
+            self.parse_basic_sub_expression(last_precedence, stop_token_check, error_tracker)
+        } else {
+            self.parse_sub_expression(last_precedence, stop_token_check, error_tracker)
+        }?;
         self.parse_expression_with_sub_expression(sub_expression, last_precedence, false, stop_token_check, error_tracker)
     }
 
@@ -858,7 +971,7 @@ impl Parser {
                 self.next_token -= 1;
                 break;
             }
-            // Check for separator for next element
+            // Check for separator
             if separator_token_kind != ending_token.kind {
                 self.next_token -= 1;
                 return Err(Error::from_span(
@@ -895,7 +1008,7 @@ impl Parser {
         }
 
         // Parse expression until stop (and call parse_expression_with_sub_expression to handle precedences correctly)
-        let (mut expression, mut did_early_exit) = self.parse_expression(last_precedence, &Some(stop_token_check), error_tracker)?;
+        let (mut expression, mut did_early_exit) = self.parse_expression(last_precedence, &Some(stop_token_check), error_tracker, false)?;
         loop {
             let token_kind = &self.tokens[self.next_token - 1].kind;
             if !did_early_exit && stop_token_check(token_kind.clone()) {
@@ -916,8 +1029,8 @@ impl Parser {
     /// Calls parse expression in loop until a stop token is drawn.
     /// Calling the normal parse_expression just once will not parse the full line, when there are precedence issues.
     /// That's why this method exists.
-    pub fn parse_expression_until_line_end(&mut self, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker) -> Result<Node, Error> {
-        let (mut result, mut did_early_exit) = self.parse_expression(0, stop_token_check, error_tracker)?;
+    pub fn parse_expression_until_line_end(&mut self, stop_token_check : &Option<StopTokenCheck>, error_tracker : &mut ErrorTracker, basic_sub_expression: bool) -> Result<Node, Error> {
+        let (mut result, mut did_early_exit) = self.parse_expression(0, stop_token_check, error_tracker, basic_sub_expression)?;
         loop {
             let mut is_end_token = false;
             if stop_token_check.is_some() {

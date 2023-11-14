@@ -857,6 +857,9 @@ impl TypeChecker {
                 }
                 return self.check_types_recursive(body, current_scope_id, error_tracker);
             }
+            Node::InspectExpression(InspectExpression {on, arms , ..}) => {
+                unimplemented!()
+            }
             Node::ReturnExpression(_) => unimplemented!(),
             Node::BreakExpression(_) => {}
             Node::IndexExpression(index_expression) => {
