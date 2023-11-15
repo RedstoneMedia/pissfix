@@ -680,8 +680,11 @@ impl Parser {
 
                 let mut arms = vec![];
                 loop {
-                    let start_token = self.next();
-                    if TokenEnum::Separator == start_token.kind {continue;}
+                    let start_token = self.peek_next(0);
+                    if TokenEnum::Separator == start_token.kind {
+                        self.next_token += 1;
+                        continue;
+                    }
                     // Parse inspect arm
                     if let TokenEnum::Identifier(_) = start_token.kind {} else {
                         return Err(Error::from_span(
@@ -691,9 +694,9 @@ impl Parser {
                         ))
                     }
                     let type_name_ident = start_token;
-                    let double_point = self.peek_next(0);
+                    let double_point = self.peek_next(1);
                     let type_selector = if double_point.kind == TokenEnum::DoublePoint {
-                        self.next_token += 1;
+                        self.next_token += 2;
                         let enum_variant_ident = self.next();
                         if let TokenEnum::Identifier(_) = enum_variant_ident.kind {} else {
                             return Err(Error::from_span(
@@ -707,9 +710,7 @@ impl Parser {
                             variant_name: enum_variant_ident
                         }
                     } else {
-                        InspectTypeSelector::Type {
-                            type_name: type_name_ident,
-                        }
+                        InspectTypeSelector::Type(self.parse_type()?)
                     };
 
                     let possibly_as_keyword = self.peek_next(0);

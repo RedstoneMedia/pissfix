@@ -1,13 +1,12 @@
 use crate::{GetSpan, Span};
 use crate::node::Node;
+use crate::node::r#type::TypeExpression;
 use crate::token::Token;
 
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum InspectTypeSelector {
-    Type {
-        type_name: Token
-    },
+    Type(TypeExpression),
     EnumVariant {
         enum_name: Token,
         variant_name: Token
@@ -17,7 +16,7 @@ pub enum InspectTypeSelector {
 impl GetSpan for InspectTypeSelector {
     fn get_span(&self) -> Span {
         match self {
-            InspectTypeSelector::Type { type_name } => type_name.get_span(),
+            InspectTypeSelector::Type(type_expr) => type_expr.get_span(),
             InspectTypeSelector::EnumVariant { enum_name, variant_name } => {
                 Span {
                     start_char: enum_name.span.start_char,

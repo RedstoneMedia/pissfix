@@ -102,7 +102,7 @@ fun rect_area(top_left: Cord, bottom_right: Cord) -> Flt {
         }
     }
 
-    width = top_left_cart.x - top_left.x
+    width = bottom_right_cart.x - top_left_cart.x
     height = bottom_right_cart.y - top_left_cart.y
     width * height
 }

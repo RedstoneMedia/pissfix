@@ -681,6 +681,85 @@ impl TypeChecker {
         into_type.clone().try_into_iter_inner(&self.all_references).unwrap()
     }
 
+    fn check_inspect_expression(&mut self, inspect_expression: &InspectExpression, current_scope_id: u64, error_tracker: &mut ErrorTracker) -> Type {
+        let InspectExpression { on, arms , ..} = inspect_expression;
+        let input_type = self.check_types_recursive(on, current_scope_id, error_tracker);
+        let mut last_arm_type : Option<Type> = None;
+        for arm in arms {
+            // Check type selector for validity (And get relevant type information from them)
+            let (selected_type, selected_input_type) = match &arm.type_selector {
+                InspectTypeSelector::Type(type_expr) => {
+                    let t = self.check_type_expression(type_expr, &vec![], error_tracker);
+                    (t.clone(), t)
+                }
+                InspectTypeSelector::EnumVariant { enum_name, variant_name } => {
+                    let TokenEnum::Identifier(enum_name_string) = enum_name.kind.clone() else {unreachable!()};
+                    let TokenEnum::Identifier(variant_name_string) = &variant_name.kind else {unreachable!()};
+                    if let Some(t_enum) = self.enums.get(&enum_name_string) {
+                        let found_variant = t_enum.variants.iter().find(|(actual_variant_name, _)|
+                            variant_name_string == actual_variant_name
+                        );
+                        (match found_variant {
+                            Some((_, Some(inner_type))) => inner_type.clone(),
+                            Some((_, None)) => Type::_None,
+                            None => {
+                                error_tracker.add_error(Error::from_span(
+                                    variant_name.get_span(),
+                                    format!("Could not find enum variant {} on enum with name {}", variant_name_string, enum_name_string),
+                                    ErrorKind::TypeCheckError
+                                ));
+                                self.unknown()
+                            }
+                        }, Type::Enum(enum_name_string))
+                    } else {
+                        error_tracker.add_error(Error::from_span(
+                            enum_name.get_span(),
+                            format!("Could not find enum with name {}", enum_name_string),
+                            ErrorKind::TypeCheckError
+                        ));
+                        let t = self.unknown();
+                        (t.clone(), t)
+                    }
+                }
+            };
+            if !selected_input_type.expect_to_be(&input_type, &mut self.all_references, true) {
+                error_tracker.add_error(Error::from_span(
+                    arm.type_selector.get_span(),
+                    format!(
+                        "Impossible to reach type {}, from inspect input type {}",
+                        selected_input_type.to_string(&self.all_references),
+                        input_type.to_string(&self.all_references)
+                    ),
+                    ErrorKind::TypeCheckError
+                ));
+            }
+            // Create bind variables and store in new sub scope
+            let mut arm_scope_variables : HashMap<String, Type> = HashMap::new();
+            if let Some(bind_var_ident) = &arm.bind_var_ident {
+                let TokenEnum::Identifier(bind_var_name) = bind_var_ident.kind.clone() else {unreachable!()};
+                arm_scope_variables.insert(bind_var_name, selected_type);
+            }
+            let arm_scope = self.all_scopes.insert(Scope {
+                functions: Default::default(),
+                variables: arm_scope_variables,
+                parent_scope: Some(current_scope_id),
+            });
+            // Check arm body in sub scope
+            let arm_body_type = self.check_types_recursive(&arm.body, arm_scope, error_tracker);
+            if let Some(last_arm_type) = last_arm_type {
+                if !arm_body_type.expect_to_be(&last_arm_type, &mut self.all_references, false) {
+                    error_tracker.add_error(Error::from_span(
+                        arm.body.get_span(),
+                        format!("Arm return values mismatch: {} and {}", arm_body_type.to_string(&self.all_references), last_arm_type.to_string(&self.all_references)),
+                        ErrorKind::TypeCheckError
+                    ));
+                }
+            }
+            last_arm_type = Some(arm_body_type);
+        }
+        last_arm_type.unwrap_or(Type::_None)
+    }
+
     fn check_types_recursive(&mut self, node: &Node, current_scope_id: u64, error_tracker : &mut ErrorTracker) -> Type {
         match node {
             Node::BinaryExpression(binary_expression) => {
@@ -857,8 +936,8 @@ impl TypeChecker {
                 }
                 return self.check_types_recursive(body, current_scope_id, error_tracker);
             }
-            Node::InspectExpression(InspectExpression {on, arms , ..}) => {
-                unimplemented!()
+            Node::InspectExpression(inspect_expression) => {
+                return self.check_inspect_expression(inspect_expression, current_scope_id, error_tracker);
             }
             Node::ReturnExpression(_) => unimplemented!(),
             Node::BreakExpression(_) => {}
