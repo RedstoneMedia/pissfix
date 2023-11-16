@@ -108,10 +108,10 @@ fun rect_area(top_left: Cord, bottom_right: Cord) -> Flt {
 }
 
 
-test_eq(rect_area(cord, Cord:CartCord(CartCord {
-    x: 10.0,
-    y: 100.0
-})), 100.0)
+test_eq(round(rect_area(cord, Cord:CartCord(CartCord {
+    x: 3.0,
+    y: 5.0
+}))), 53)
 
 test_eq(contains([3, 4, 7], 4), true)
 test_eq(contains("Hello, World", "Hello"), true)

@@ -197,6 +197,111 @@ impl CodeGenerator {
         self.add_with_indent("!", indent_level);
     }
 
+    fn generate_type_check_code(&mut self, type_expression: &TypeExpression, indent_level: usize) {
+        match type_expression {
+            TypeExpression::SingleTypeExpression(SingleTypeExpression { type_name, generic_parameters }) => {
+                let TokenEnum::Identifier(type_name_string) = &type_name.kind else {unreachable!()};
+                match type_name_string.as_str() {
+                    "Str" => self.add_with_indent("str?", indent_level),
+                    "Int" => self.add_with_indent("int?", indent_level),
+                    "Flt" => self.add_with_indent("flt?", indent_level),
+                    "Bool" => self.add_with_indent("bool?", indent_level),
+                    "Arr" | "Sequence" => {
+                        self.add_with_indent("dup ", indent_level);
+                        match type_name_string.as_str() {
+                            "Arr" => self.add_with_indent("arr?", indent_level),
+                            "Sequence" => self.add_with_indent("dup arr? swap str? or", indent_level),
+                            _ => unreachable!(),
+                        }
+                        // Check if it is a array/sequence
+                        self.add_with_indent(" {\n", indent_level+1);
+                        let Some(inner_type) = generic_parameters
+                            .as_ref()
+                            .and_then(|p| p.parameters.get(0)) else {unreachable!()};
+                        // If it is one check if every item in the array/sequence has the inner type
+                        self.add_with_indent("true swap {\n", indent_level+1);
+                        self.generate_type_check_code(inner_type, indent_level+2);
+                        self.add_with_indent("and\n", indent_level+2);
+                        self.add_with_indent("} for\n", indent_level+1);
+                        // If it is not a array/sequence, then we don't have the correct type
+                        self.add_with_indent("} {pop false} if", indent_level);
+                    },
+                    "Any" => self.add_with_indent("pop true", indent_level),
+                    _ => unreachable!("Unknown type {}", type_name_string)
+                }
+            },
+            TypeExpression::LambdaTypeExpression(_) => unimplemented!("PostFix has no way to check if a value is a lambda function"),
+            TypeExpression::UnionTypeExpression(UnionExpression { types }) => {
+                self.add_with_indent("tmp! ", indent_level);
+                // Push (if every type is fulfilled) to the stack
+                for t in types {
+                    self.add_with_indent("tmp ", indent_level);
+                    self.generate_type_check_code(t, indent_level);
+                }
+                // Return true if any of the pushed values are true
+                for _ in 0..(types.len() - 1) {
+                    self.add_with_indent("or ", indent_level);
+                }
+                self.code.pop(); // Remove trailing " "
+            }
+        }
+        self.add_with_indent(" ", indent_level);
+    }
+
+    fn generate_inspect_code(&mut self, inspect_expression: &InspectExpression, indent_level: usize) {
+        let InspectExpression {on, arms , ..} = inspect_expression;
+        self.generate_code(on, indent_level);
+        self.add_with_indent(" inspect_on!\n", indent_level);
+        self.add_with_indent("[\n", indent_level);
+        for arm in arms {
+            // Add code to check if type matches type selector
+            self.add_with_indent("{", indent_level+1);
+            self.add_with_indent("inspect_on ", indent_level+1);
+            match &arm.type_selector {
+                InspectTypeSelector::Type(type_expression) => {
+                    self.generate_type_check_code(type_expression, indent_level + 1);
+                    self.code.pop(); // Remove trailing space
+                }
+                InspectTypeSelector::EnumVariant { variant_name: variant_name_ident, ..} => {
+                    let TokenEnum::Identifier(variant_name) = &variant_name_ident.kind else {unreachable!()};
+                    self.add_with_indent(&format!("{}_?", variant_name.to_lowercase()), indent_level+1);
+                }
+            }
+            self.add_with_indent("} ", indent_level+1);
+
+            // Add arm body (with or without binding variable)
+            if let Some(bind_var_ident) = &arm.bind_var_ident {
+                let TokenEnum::Identifier(bind_var_string) = &bind_var_ident.kind else {unreachable!()};
+                // If we have a enum variant selector get the inner variant value
+                let inner_getter = if let InspectTypeSelector::EnumVariant {variant_name: variant_name_ident, ..} = &arm.type_selector {
+                    let TokenEnum::Identifier(variant_name) = &variant_name_ident.kind else {unreachable!()};
+                    format!("inspect_on {}_-inner", variant_name.to_lowercase())
+                } else {
+                    "inspect_on".to_string()
+                };
+                let bind_inner_verbatim = Node::_Verbatim(format!("{} {}! ", inner_getter, bind_var_string));
+                let expressions = if let Node::ExpressionList(ExpressionList {opening: Token {kind: TokenEnum::OpeningBrace, ..}, expressions, ..}, ) = &arm.body {
+                    let mut modified_expressions = Vec::with_capacity(expressions.len() + 1);
+                    modified_expressions.push(bind_inner_verbatim);
+                    modified_expressions.extend_from_slice(expressions);
+                    modified_expressions
+                } else {
+                    vec![bind_inner_verbatim, arm.body.clone()]
+                };
+                let arm_body = Node::ExpressionList(ExpressionList {
+                    opening: Token { kind: TokenEnum::OpeningBrace, span: Default::default() },
+                    expressions,
+                    closing: Token { kind: TokenEnum::ClosingBrace, span: Default::default() },
+                });
+                self.generate_code(&arm_body, indent_level+1);
+            } else {
+                self.generate_code(&arm.body, indent_level+1);
+            }
+            self.add_with_indent("\n", indent_level);
+        }
+        self.add_with_indent("] cond\n", indent_level);
+    }
+
     pub fn generate_code(&mut self, node: &Node, indent_level: usize) {
         match node {
             Node::BinaryExpression(BinaryExpression {left, right, operation}) => {
@@ -326,8 +431,8 @@ impl CodeGenerator {
                 };
                 self.add_with_indent(" if", indent_level);
             }
-            Node::InspectExpression(InspectExpression {on, arms , ..}) => {
-                unimplemented!()
+            Node::InspectExpression(inspect_expression) => {
+                self.generate_inspect_code(inspect_expression ,indent_level);
             }
             Node::FunctionExpression(FunctionExpression { name, base, generic_parameters, ..}) => {
                 let TokenEnum::Identifier(name_ident) = &name.kind else {unreachable!()};
